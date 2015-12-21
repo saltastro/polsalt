@@ -1,0 +1,18 @@
+# fixed spectrograph constants
+Grat0	1.407798403	deg
+Home0	-0.063025809 deg
+ArtErr	-4.2E-05	(1+Err)*.75 deg
+T2Con	-5.00	
+T3Con	-1.00
+Fcama5	-0.0023		
+Fcama4	0.0365
+Fcama3	-0.2100
+Fcama2	0.5061
+Fcama1	-0.1861
+Fcamb	328.697    mm
+
+
+
+				
+
+

@@ -1,0 +1,11 @@
+# RSS waveplate patterns
+# new patterns as of 11 May, 2015
+# WPPATTERN stokes wp  stations
+Linear	     3    hwp	0	4	2	6				
+Linear-Hi	 3    hwp	0	4	2	6	1	5	3	7
+Circular	 2    hwp	0	0						
+Circular	 2    qwp	4	-4						
+Circular-Hi	 2    hwp	0	0	2	2	4	4	6	6
+Circular-Hi	 2    qwp	4	-4	-4	4	4	-4	-4	4
+All-Stokes	 4    hwp	0	4	2	6	0	0		
+All-Stokes	 4    qwp	0	0	0	0	4	-4		
