@@ -1,0 +1,7 @@
+Ar    Ar.salt
+CuAr    CuAr.salt
+HgAr    HgAr.salt
+Ne    NeAr.salt
+sky    sky.salt
+ThAr    ThAr.salt
+Xe    Xe.salt
