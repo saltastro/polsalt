@@ -19,16 +19,10 @@ plt.ioff()
 np.set_printoptions(threshold=np.nan)
 
 def specpolview(infile_list, bincode='', saveoption = ''):
-    """View output results
-    Parameters
-    ----------
-    infile_list: list
-       one or more _stokes.fits files
-    bincode  
-       unbin (= ''), nnA (nn Angstroms), nn% (binned to %)
-   saveoption  
-       '' (text to terminal), text (text to file), plot (terminal plot and pdf file), textplot (both)
-    """
+# infile_list: one or more _stokes.fits files
+# bincode:     unbin (= ''), nnA (nn Angstroms), nn% (binned to %)
+# saveoption:  '' (text to terminal), text (text to file), 
+#                plot (terminal plot and pdf file), textplot (both)
     obss = len(infile_list)
     bintype = 'unbin'
     if len(bincode):
@@ -70,8 +64,9 @@ def specpolview(infile_list, bincode='', saveoption = ''):
             plot_s[0].set_ylabel('Intensity')
             for s in range(1,plots): plot_s[s].set_ylabel(stokes_s[s]+' Polarization (%)')
             if plots > 2:
+                stokes_s[1:3] = '    P', (pa_type[:3]+' T')   
                 plot_s[1].set_ylabel('Linear Polarization (%)')
-                plot_s[2].set_ylabel(pa_type+' PA (deg)')            
+                plot_s[2].set_ylabel(pa_type+' PA (deg)')         
             fig.set_size_inches((8.5,11))
             fig.subplots_adjust(left=0.175)
 
@@ -87,30 +82,48 @@ def specpolview(infile_list, bincode='', saveoption = ''):
             plot_s[0].plot(wav_w[w:ww],stokes_sw[0,w:ww],color=plotcolor,label=label)
             label = '_'+name    
 
-    #   for I,Q,U, and I,Q,U,V, compute unbinned linear polarization, variance
-        if plots > 2:
-            stokes_s[1:3] = '    P', (pa_type[:3]+' T')
-            stokesp_w = np.zeros((wavs));   stokest_w = np.zeros((wavs))
-            varp_w = np.zeros((wavs));   vart_w = np.zeros((wavs))
-            varpe_dw = np.zeros((2,wavs));  varpt_w = np.zeros((wavs))
-            wok = wok_s[0] & wok_s[1] & wok_s[2]
-            stokesp_w[wok] = np.sqrt(stokes_sw[1,wok]**2 + stokes_sw[2,wok]**2)     # unnormalized linear polarization
-            stokest_w[wok] = (0.5*np.arctan2(stokes_sw[2,wok],stokes_sw[1,wok]))    # PA in radians
-            stokestmean = 0.5*np.arctan2(stokes_sw[2,wok].mean(),stokes_sw[1,wok].mean())
-            pafold = np.pi*stokestmean/abs(stokestmean)
-            stokest_w[np.abs(stokest_w-stokestmean)>np.pi/2.] += pafold
-            stokest_w -= (int((stokestmean + np.pi)/np.pi) -1)*np.pi      # 0 < mean < pi
-        # variance matrix eigenvalues, ellipse orientation
-            varpe_dw[:,wok] = 0.5*(var_sw[1,wok]+var_sw[2,wok]                          \
+        if bintype == 'unbin':
+            stokes_sv = np.full((plots,wavs),0.);   errstokes_sv = np.full((plots,wavs),0.);    wav_v = wav_w
+            stokes_sv[1:plots,wok_s[0]] = 100*stokes_sw[1:plots,wok_s[0]]/stokes_sw[0,wok_s[0]]
+            errstokes_sv[1:plots,wok_s[0]] =  100*np.sqrt(var_sw[1:plots,wok_s[0]])/stokes_sw[0,wok_s[0]]
+            if plots > 2:
+                stokesp_w = np.zeros((wavs));   stokest_w = np.zeros((wavs))
+                varp_w = np.zeros((wavs));   vart_w = np.zeros((wavs))
+                varpe_dw = np.zeros((2,wavs));  varpt_w = np.zeros((wavs))
+                wok = wok_s[0] & wok_s[1] & wok_s[2]
+                stokesp_w[wok] = np.sqrt(stokes_sw[1,wok]**2 + stokes_sw[2,wok]**2)     # unnormalized linear polarization
+                stokest_w[wok] = (0.5*np.arctan2(stokes_sw[2,wok],stokes_sw[1,wok]))    # PA in radians
+                stokestmedian = 0.5*np.median(np.arctan2(stokes_sw[2,wok].mean(),stokes_sw[1,wok]))
+                stokest_w[wok] = (stokest_w[wok]-(stokestmedian+np.pi/2.)+np.pi) % np.pi + (stokestmedian+np.pi/2.)
+                
+            # variance matrix eigenvalues, ellipse orientation
+                varpe_dw[:,wok] = 0.5*(var_sw[1,wok]+var_sw[2,wok]                          \
                     + np.array([1,-1])[:,None]*np.sqrt((var_sw[1,wok]-var_sw[2,wok])**2 + 4*var_sw[-1,wok]**2))
-            varpt_w[wok] = 0.5*np.arctan2(2.*var_sw[-1,wok],var_sw[1,wok]-var_sw[2,wok])
-        # linear polarization variance along p, PA   
-            varp_w[wok] = varpe_dw[0,wok]*(np.cos(2.*stokest_w[wok]-varpt_w[wok]))**2   \
+                varpt_w[wok] = 0.5*np.arctan2(2.*var_sw[-1,wok],var_sw[1,wok]-var_sw[2,wok])
+            # linear polarization variance along p, PA   
+                varp_w[wok] = varpe_dw[0,wok]*(np.cos(2.*stokest_w[wok]-varpt_w[wok]))**2   \
                        + varpe_dw[1,wok]*(np.sin(2.*stokest_w[wok]-varpt_w[wok]))**2
-            vart_w[wok] = varpe_dw[0,wok]*(np.sin(2.*stokest_w[wok]-varpt_w[wok]))**2   \
+                vart_w[wok] = varpe_dw[0,wok]*(np.sin(2.*stokest_w[wok]-varpt_w[wok]))**2   \
                        + varpe_dw[1,wok]*(np.cos(2.*stokest_w[wok]-varpt_w[wok]))**2
 
-        if bintype != 'unbin':
+                stokes_sv[1,wok_s[0]] = 100*stokesp_w[wok_s[0]]/stokes_sw[0,wok_s[0]]
+                errstokes_sv[1,wok_s[0]] =  100*np.sqrt(var_sw[1,wok_s[0]])/stokes_sw[0,wok_s[0]]
+                stokes_sv[2,wok_s[0]] = np.degrees(stokest_w[wok_s[0]])
+                errstokes_sv[2,wok_s[0]] =  0.5*np.degrees(np.sqrt(var_sw[2,wok_s[0]])/stokesp_w[wok_s[0]]) 
+        # show gaps in plot, remove them from text
+            for s in range(1,plots):
+                ww = -1; 
+                while (bpm_sw[s,ww+1:]==0).sum() > 0:
+                    w = ww+1+np.where(bpm_sw[s,ww+1:]==0)[0][0]
+                    ww = wavs
+                    dw = np.where(bpm_sw[s,w:]>0)[0]  
+                    if dw.size: ww = w + dw[0] - 1             
+                    plot_s[s].plot(wav_v[w:ww],stokes_sv[s,w:ww],color=plotcolor,label=label)
+            stokes_sv = stokes_sv[:,wok_s[0]]
+            errstokes_sv = errstokes_sv[:,wok_s[0]]
+            wav_v = wav_v[wok_s[0]]
+
+        else:
         # Set up bins, blocked, or binned to error based on stokes 1 or on linear stokes p
             if bintype == 'wavl':
                 bin_w = (wav_w / blk -0.5).astype(int) - int((wav_w / blk -0.5).min())
@@ -153,8 +166,8 @@ def specpolview(infile_list, bincode='', saveoption = ''):
                 varpe_db = np.zeros((2,bins));  varpt_b = np.zeros((bins))
                 stokesp_b[bok] = np.sqrt(stokes_sb[1,bok]**2 + stokes_sb[2,bok]**2)     # unnormalized linear polarization
                 stokest_b[bok] = (0.5*np.arctan2(stokes_sb[2,bok],stokes_sb[1,bok]))    # PA in radians
-                stokest_b[bok] = ((stokest_b[bok]+np.pi/2.+np.median(stokest_b[bok])) % np.pi) \
-                                - np.median(stokest_b[bok])                             # get rid up 180 wraps
+                stokestmedian = 0.5*np.median(np.arctan2(stokes_sb[2,bok].mean(),stokes_sb[1,bok]))
+                stokest_b[bok] = (stokest_b[bok]-(stokestmedian+np.pi/2.)+np.pi) % np.pi + (stokestmedian+np.pi/2.)
             # variance matrix eigenvalues, ellipse orientation
                 varpe_db[:,bok] = 0.5*(var_sb[1,bok]+var_sb[2,bok]                          \
                     + np.array([1,-1])[:,None]*np.sqrt((var_sb[1,bok]-var_sb[2,bok])**2 + 4*var_sb[-1,bok]**2))
@@ -172,29 +185,6 @@ def specpolview(infile_list, bincode='', saveoption = ''):
                 plot_s[s].errorbar(wav_v,stokes_sv[s],color=plotcolor,fmt='.',    \
                     yerr=errstokes_sv[s],xerr=(dwavleft_v,dwavright_v),capsize=0)
 
-        # unbinned
-        else:
-            stokes_sv = np.full((plots,wavs),0.);   errstokes_sv = np.full((plots,wavs),0.);    wav_v = wav_w
-            stokes_sv[1:plots,wok_s[0]] = 100*stokes_sw[1:plots,wok_s[0]]/stokes_sw[0,wok_s[0]]
-            errstokes_sv[1:plots,wok_s[0]] =  100*np.sqrt(var_sw[1:plots,wok_s[0]])/stokes_sw[0,wok_s[0]]
-            if plots > 2:
-                stokes_sv[1,wok_s[0]] = 100*stokesp_w[wok_s[0]]/stokes_sw[0,wok_s[0]]
-                errstokes_sv[1,wok_s[0]] =  100*np.sqrt(var_sw[1,wok_s[0]])/stokes_sw[0,wok_s[0]]
-                stokes_sv[2,wok_s[0]] = np.degrees(stokest_w[wok_s[0]])
-                errstokes_sv[2,wok_s[0]] =  0.5*np.degrees(np.sqrt(var_sw[2,wok_s[0]])/stokesp_w[wok_s[0]]) 
-        # show gaps in plot, remove them from text
-            for s in range(1,plots):
-                ww = -1; 
-                while (bpm_sw[s,ww+1:]==0).sum() > 0:
-                    w = ww+1+np.where(bpm_sw[s,ww+1:]==0)[0][0]
-                    ww = wavs
-                    dw = np.where(bpm_sw[s,w:]>0)[0]  
-                    if dw.size: ww = w + dw[0] - 1             
-                    plot_s[s].plot(wav_v[w:ww],stokes_sv[s,w:ww],color=plotcolor,label=label)
-            stokes_sv = stokes_sv[:,wok_s[0]]
-            errstokes_sv = errstokes_sv[:,wok_s[0]]
-            wav_v = wav_v[wok_s[0]]
-
         textfile = sys.stdout
         if savetext: textfile = name+'_'+bincode+'.txt'
         fmt_s = ['%8.2f ','%8.4f ','%8.3f ','%8.4f ']
@@ -204,7 +194,10 @@ def specpolview(infile_list, bincode='', saveoption = ''):
         np.savetxt(textfile,np.vstack((wav_v,stokes_sv[1:],errstokes_sv[1:])).T, fmt=fmt, header=hdr) 
 
     plot_s[0].set_ylim(bottom=0)                            # intensity plot baseline 0
-    if plots >2: plot_s[1].set_ylim(bottom=0)               # linear polarization % plot baseline 0
+    if plots >2: 
+        plot_s[1].set_ylim(bottom=0)                        # linear polarization % plot baseline 0
+        ymin,ymax = plot_s[2].set_ylim()
+        plot_s[2].set_ylim(bottom=min(ymin,(ymin+ymax)/2.-5.),top=max(ymax,(ymin+ymax)/2.+5.))
     if obss>1: plot_s[0].legend(fontsize='x-small',loc='lower center')
     else: plot_s[0].set_title(name+"   "+obsdate) 
     if saveplot:
