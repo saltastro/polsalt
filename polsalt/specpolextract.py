@@ -58,6 +58,7 @@ def specpolextract(infilelist, logfile='salt.log'):
             ilist = np.where(grp_i==g)[0]
             outfiles = len(ilist)
             outfilelist = [infilelist[i] for i in ilist]
+            obs_dict=obslog(outfilelist)
             imagenolist = [int(os.path.basename(infilelist[i]).split('.')[0][-4:]) for i in ilist]
             log.message('\nExtract: '+objectlist[objno_i[ilist[0]]]+'  Grating %s  Grang %6.2f  Artic %6.2f' % \
                confdatlist[confno_i[ilist[0]]], with_header=False)
@@ -82,7 +83,7 @@ def specpolextract(infilelist, logfile='salt.log'):
                     var_orc = pyfits.open(outfilelist[i])['VAR'].data*count_orc
                 else:
                     count_orc += (~badbin_orc).astype(int)
-                    image_orc += pyfits.open(infilelist[i])['SCI'].data*(~badbin_orc).astype(int)
+                    image_orc += pyfits.open(outfilelist[i])['SCI'].data*(~badbin_orc).astype(int)
                     var_orc += pyfits.open(outfilelist[i])['VAR'].data*(~badbin_orc).astype(int)
                 count += 1
             if count ==0:
@@ -105,7 +106,6 @@ def specpolextract(infilelist, logfile='salt.log'):
             hdusum.append(pyfits.ImageHDU(data=var_orc, header=header, name='VAR'))
             hdusum.append(pyfits.ImageHDU(data=badbinall_orc.astype('uint8'), header=header, name='BPM'))
             hdusum.append(pyfits.ImageHDU(data=wav_orc, header=header, name='WAV'))
-#            hdusum.writeto("groupsum_"+str(g)+".fits",clobber=True)
 
             psf_orc,skyflat_orc,badbinnew_orc,isbkgcont_orc,maprow_od,drow_oc = \
                 specpolsignalmap(hdusum,logfile=logfile)
@@ -122,6 +122,9 @@ def specpolextract(infilelist, logfile='salt.log'):
             isbkgcont_orc &= (~badbinall_orc & ~isedge_orc & ~istarget_orc)
             badbinall_orc |= badbinnew_orc
             badbinone_orc |= badbinnew_orc
+            hdusum['BPM'].data = badbinnew_orc.astype('uint8')
+            groupname = objectlist[objno_i[ilist[0]]]+"_c"+str(confno_i[ilist[0]])+".fits"
+            hdusum.writeto(groupname,clobber=True)
 
 #            pyfits.PrimaryHDU(var_orc.astype('float32')).writeto('var_orc1.fits',clobber=True) 
 #            pyfits.PrimaryHDU(badbinnew_orc.astype('uint8')).writeto('badbinnew_orc.fits',clobber=True)   
