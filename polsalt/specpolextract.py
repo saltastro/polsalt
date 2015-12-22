@@ -35,7 +35,7 @@ debug = True
 def specpolextract(infilelist, logfile='salt.log'):
     """Produce a 1-D extract spectra for the O and E beams
 
-    This also cleans the 2-D spectra of a number of artifacts
+    This also cleans the 2-D spectra of a number of artifacts, resampling the data, and accounting for small spatial shifts in the observation. 
 
     Parameters
     ----------
