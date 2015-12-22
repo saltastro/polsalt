@@ -23,6 +23,26 @@ np.set_printoptions(threshold=np.nan)
 debug = True
 
 def specpolrawstokes(infile_list, logfile='salt.log'):
+    """Produces an unnormalized stokes measurement in intensity from 
+       a pair of WP filter positions
+ 
+    Parameters
+    ----------
+    infile_list: list
+        List of filenames that include an extracted spectra
+
+    logfile:
+
+    Returns
+    -------
+
+    Notes
+    -----
+    The input file is a FITS file containing a 1D extracted spectrum with an e and o level includes the intensity, variance, and bad pixels as extracted from the 2D spectrum. 
+
+    For each pair of stokes measurements, it produces an output FITS file now with two columns that are the intensity and difference 
+    for the pair measured as a function of wavelength and also includes the variance and bad pixel maps.  The output file is named as the target name_configuration number_wave plate positions_number of repeats.fits
+    """
     #set up some files that will be needed
     obsdate=os.path.basename(infile_list[0]).split('.')[0][-12:-4]
 
@@ -103,7 +123,8 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
                     wpat_p = np.array(p.split()[3:]).astype(int)
                 if (p.split()[0]==wppat_i[i0])&(p.split()[2]=='qwp'): 
                     wpat_dp = np.vstack(wpat_p,np.array(p.split()[3:])) 
-            stokes=0; j=-1
+            stokes=0
+            j=-1
 
             while j < (len(idx_j[0])-2):
                 j += 1
@@ -112,19 +133,64 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
                     if (np.where(wpat_p[0::2]==hsta_i[i])[0].size > 0): 
                         idxp = np.where(wpat_p==hsta_i[i])[0][0]
                         if hsta_i[i+1] != wpat_p[idxp+1]: continue
-                    else: continue
+                    else: 
+                        continue
                 if (wpstate_i[i]=='hqw'):
                     if (np.where(wpat_dp[0::2]==(hsta_i[i],qsta_i[i]))[0].size > 0): 
                         idxp = np.where(wpat_dp==(hsta_i[i],qsta_i[i]))[0][0]
                         if (hsta_i[i+1],qsta_i[i+1]) != wpat_dp[None,idxp+1]: continue
-                    else: continue
-    
-                if stokes==0:
-                    wavs = pyfits.getheader(infile_list[i],'SCI',1)['NAXIS1']
-                sci_fow = np.zeros((2,2,wavs)); var_fow = np.zeros_like(sci_fow);   \
-                                                bpm_fow = np.zeros_like(sci_fow) 
-                for f in (0,1):
-                    hdulist = pyfits.open(infile_list[i+f])
+                    else: 
+                        continue
+     
+                first_pair_file = infile_list[i]
+                second_pair_file = infile_list[i+1]
+
+                name = object_i[i] + '_c' + str(config_i[i]) + '_h' + str(hsta_i[i]) + str(hsta_i[i+1])
+                if (wpstate_i[i]=='hqw'):
+                    name += 'q'+['m','p'][qsta_i[i]==4]+['m','p'][qsta_i[i+1]==4]
+
+                count = " ".join(name_n).count(name)
+                name += ('_%02i' % (count+1))
+ 
+                create_raw_stokes_file(first_pair_file, second_pair_file,output_file=name+'.fits', wppat=wppat_i[i])
+                log.message('%20s  %1i  %1i %1i %8s %8.2f %8.2f %12s' % \
+                    (name,obs,rbin,cbin,grating,grang,artic,wppat_i[i]), with_header=False)
+                name_n.append(name)
+                i += 1
+                stokes += 1
+
+    return
+ 
+ 
+def create_raw_stokes_file(first_pair_file, second_pair_file, output_file, wppat=None):
+                """Create the raw stokes file.  
+
+                Parameters
+                ----------
+                first_pair_file: str
+                   Name of first file in pair for pattern
+
+                second_pair_file: str
+                   Name of second file in pair for pattern
+
+                output_file: str
+                   Name of output file
+
+                wppat: str
+                   Name of wave plate pattern
+
+                Notes
+                ------
+                Writes out a FITS file containing the intensity and difference for the pair
+
+                """
+
+                wavs = pyfits.getheader(first_pair_file,'SCI',1)['NAXIS1']
+                sci_fow = np.zeros((2,2,wavs)) 
+                var_fow = np.zeros_like(sci_fow)
+                bpm_fow = np.zeros_like(sci_fow) 
+                for f, img in enumerate([first_pair_file, second_pair_file]):
+                    hdulist = pyfits.open(img)
                     sci_fow[f] = hdulist['sci'].data.reshape((2,-1))
                     var_fow[f] = hdulist['var'].data.reshape((2,-1))
                     bpm_fow[f] = hdulist['bpm'].data.reshape((2,-1))
@@ -136,9 +202,14 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
                 bpm_w = (bpm_fow.sum(axis=0).sum(axis=0) > 0).astype(int)
                 wok = (bpm_w==0)
 
-                stokes_sw = np.zeros((2,wavs),dtype='float32');  var_sw = np.zeros_like(stokes_sw)
+                stokes_sw = np.zeros((2,wavs),dtype='float32')  
+                var_sw = np.zeros_like(stokes_sw)
+
+                #intensity: 0.5 * (o1 + o2 + e1 + e2) 
                 stokes_sw[0,wok] = 0.5*sci_fow[:,:,wok].reshape((2,2,-1)).sum(axis=0).sum(axis=0)
                 var_sw[0,wok] = 0.25*var_fow[:,:,wok].reshape((2,2,-1)).sum(axis=0).sum(axis=0)
+
+                #difference: defined as 0.5 * ( (o1 - o2)/(o1+o2) - (e1-e2)/(e1+e2))
                 stokes_sw[1,wok] = 0.5*((sci_fow[0,1,wok]-sci_fow[1,1,wok])/(sci_fow[0,1,wok]+sci_fow[1,1,wok]) \
                            - (sci_fow[0,0,wok]-sci_fow[1,0,wok])/(sci_fow[0,0,wok]+sci_fow[1,0,wok]))
                 var_sw[1,wok] = 0.5*((var_fow[0,1,wok]+var_fow[1,1,wok])/(sci_fow[0,1,wok]+sci_fow[1,1,wok])**2 \
@@ -148,19 +219,10 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
                 var_sw[1] *= stokes_sw[0]**2
                 bpm_sw = np.array([bpm_w,bpm_w],dtype='uint8').reshape((2,wavs))
 
-                name = object_i[i] + '_c' + str(config_i[i]) + '_h' + str(hsta_i[i]) + str(hsta_i[i+1])
-                if (wpstate_i[i]=='hqw'):
-                    name += 'q'+['m','p'][qsta_i[i]==4]+['m','p'][qsta_i[i+1]==4]
-
-                count = " ".join(name_n).count(name)
-                name += ('_%02i' % (count+1))
- 
-                log.message('%20s  %1i  %1i %1i %8s %8.2f %8.2f %12s' % \
-                    (name,obs,rbin,cbin,grating,grang,artic,wppat_i[i]), with_header=False)
 
                 hduout = pyfits.PrimaryHDU(header=hdulist[0].header)    
                 hduout = pyfits.HDUList(hduout)
-                hduout[0].header.update('WPPATERN',wppat_i[i])
+                if wppat: hduout[0].header.update('WPPATERN',wppat)
                 header=hdulist['SCI'].header.copy()
                 header.update('VAREXT',2)
                 header.update('BPMEXT',3)
@@ -170,15 +232,7 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
                 hduout.append(pyfits.ImageHDU(data=var_sw.reshape((2,1,wavs)), header=header, name='VAR'))
                 hduout.append(pyfits.ImageHDU(data=bpm_sw.reshape((2,1,wavs)), header=header, name='BPM'))
 
-                hduout.writeto(name+'.fits',clobber=True,output_verify='warn')
-                name_n.append(name)
-                i += 1
-                stokes += 1
-
-    return
- 
- 
-
+                hduout.writeto(output_file,clobber=True,output_verify='warn')
     
 
 
