@@ -33,6 +33,20 @@ debug = True
 
 # ---------------------------------------------------------------------------------
 def specpolextract(infilelist, logfile='salt.log'):
+    """Produce a 1-D extract spectra for the O and E beams
+
+    This also cleans the 2-D spectra of a number of artifacts
+
+    Parameters
+    ----------
+    infile_list: list
+        List of filenames that include an extracted spectra
+
+    logfile: str
+        Name of file for logging
+
+
+    """
 
 #set up the files
     obsdate=os.path.basename(infilelist[0])[8:16]
