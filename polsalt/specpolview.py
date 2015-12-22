@@ -15,7 +15,7 @@ import matplotlib
 matplotlib.use('PDF')
 from matplotlib import pyplot as plt
 from matplotlib.ticker import FuncFormatter  
-#plt.ioff()
+plt.ioff()
 np.set_printoptions(threshold=np.nan)
 
 def specpolview(infile_list, bincode='', saveoption = ''):
