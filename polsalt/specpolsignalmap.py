@@ -32,6 +32,21 @@ debug = True
 
 # ---------------------------------------------------------------------------------
 def specpolsignalmap(hdu,logfile=sys.stdout):
+    """
+    Find Second order, Littrow ghost
+    Find sky lines and produce sky flat for 2d sky subtraction
+    Make smoothed psf weighting factor for optimized extraction
+
+    Parameters
+    ----------
+    hdu: fits.HDUList
+       image to be cleaned
+
+    logfile: str
+       Output 
+
+    """
+
 
     with logging(logfile, debug) as log:
         sci_orc = hdu['sci'].data.copy()

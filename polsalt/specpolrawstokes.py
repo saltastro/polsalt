@@ -36,10 +36,9 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
     infile_list: list
         List of filenames that include an extracted spectra
 
-    logfile:
+    logfile: str
+        Name of file for logging
 
-    Returns
-    -------
 
     Notes
     -----

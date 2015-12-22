@@ -24,6 +24,21 @@ np.set_printoptions(threshold=np.nan)
 debug = True
 
 def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log'):
+    """Combine the raw stokes and apply the polarimetric calibrations
+
+    Parameters
+    ----------
+    infile_list: list
+        List of filenames that include an extracted spectra
+
+    polcal: str
+        File with polarimetric calibration values
+
+    logfile: str
+        Name of file for logging
+
+
+    """
 
     patternlist = open(datadir+'wppaterns.txt','r').readlines()
     patternpairs = dict();  patternstokes = dict()
