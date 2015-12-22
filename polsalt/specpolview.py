@@ -15,14 +15,25 @@ import matplotlib
 matplotlib.use('PDF')
 from matplotlib import pyplot as plt
 from matplotlib.ticker import FuncFormatter  
-plt.ioff()
+#plt.ioff()
 np.set_printoptions(threshold=np.nan)
 
 def specpolview(infile_list, bincode='', saveoption = ''):
-# infile_list: one or more _stokes.fits files
-# bincode:     unbin (= ''), nnA (nn Angstroms), nn% (binned to %)
-# saveoption:  '' (text to terminal), text (text to file), 
-#                plot (terminal plot and pdf file), textplot (both)
+    """View output results
+
+    Parameters
+    ----------
+    infile_list: list
+       one or more _stokes.fits files
+
+    bincode  
+       unbin (= ''), nnA (nn Angstroms), nn% (binned to %)
+
+   saveoption  
+       '' (text to terminal), text (text to file), plot (terminal plot and pdf file), textplot (both)
+
+    """
+
     obss = len(infile_list)
     bintype = 'unbin'
     if len(bincode):
@@ -198,14 +209,18 @@ def specpolview(infile_list, bincode='', saveoption = ''):
         plot_s[1].set_ylim(bottom=0)                        # linear polarization % plot baseline 0
         ymin,ymax = plot_s[2].set_ylim()
         plot_s[2].set_ylim(bottom=min(ymin,(ymin+ymax)/2.-5.),top=max(ymax,(ymin+ymax)/2.+5.))
-    if obss>1: plot_s[0].legend(fontsize='x-small',loc='lower center')
-    else: plot_s[0].set_title(name+"   "+obsdate) 
+
+    if obss>1: 
+       plot_s[0].legend(fontsize='x-small',loc='lower center')
+    else: 
+       plot_s[0].set_title(name+"   "+obsdate) 
+
     if saveplot:
         plotfile = ('_').join(infile_list[0].split('_')[:2])+'_'+bincode+'.pdf'
         plt.savefig(plotfile,orientation='portrait')
-        if os.popen('ps -C evince -f').read().count(plotfile)==0:
-            os.system('evince '+plotfile+' &')
-    else: plt.show(block=True)
+        #if os.popen('ps -C evince -f').read().count(plotfile)==0: os.system('evince '+plotfile+' &')
+    else: 
+        plt.show(block=True)
     return
  
 if __name__=='__main__':
