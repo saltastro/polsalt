@@ -31,6 +31,57 @@ np.set_printoptions(threshold=np.nan)
 debug = True
 
 # ---------------------------------------------------------------------------------
+def fovedge(profile_oy,rbin):
+    """
+    Find FOV edge, make FOV mask for O,E spectra
+    Edge is where signal comes above detector background
+    clip where O and E beams may overlap, and to make O and E FOV's coincide
+
+    Parameters
+    ----------
+    profile_oy: np 2D array of crossdispersion profile
+        _o = (0,1) = (O,E)
+        _y CCD row bins
+    rbin: int binning in row direction
+
+    Notes
+    ------
+    edgerow_od: np 2D array of fov edge row number
+        _d = (0,1) = (top, bottom)
+    badrow_oy: np boolean 2D array
+    axisrow_o: np 1D array row number of optic axis (fov edge center before clipping)
+
+    """
+
+    rows = profile_oy.shape[1]
+    edgerow_od = np.zeros((2,2),dtype=int)
+    badrow_oy = np.zeros((2,rows),dtype=bool)
+    axisrow_o = np.zeros(2)
+    maxoverlaprows = 34/rbin                                # beam overlap for 4' longslit in NIR
+    for o in (0,1):
+        bkg = np.median(profile_oy)
+        trow = np.where(profile_oy[o] == profile_oy[o].max())[0][0]
+        hist,bin = np.histogram(profile_oy[o],bins=32,range=(0,2*bkg))
+#        np.savetxt("histbin_"+str(o)+".txt",np.vstack((hist,bin[1:])).T,fmt="%8.5f")
+        histarg = np.argmax((hist[1:-1]-hist[2:])> 2)
+        dtrbkg = bin[histarg+2]                             # detector bkg is first peak in histogram beyond 0
+        for d in (0,1):                                 
+            row_y = np.where((d==1) ^ (np.arange(rows) < trow))[0][::2*d-1]    
+            hist,bin = np.histogram(profile_oy[o,row_y],bins=32,range=(dtrbkg,2*bkg))
+#            np.savetxt("histbin_"+str(o)+str(d)+".txt",np.vstack((hist,bin[1:])).T,fmt="%8.5f")
+            histarg = np.argmax(hist[1:].cumsum()>3)+1      # fov edge: >3 in cum hist[1:] above dtrbkg
+            edgeval = bin[histarg:histarg+2].mean()
+            edgerow_od[o,d] = trow + (2*d-1)*(np.argmax(profile_oy[o,row_y] <= edgeval))
+        axisrow_o[o] = edgerow_od[o].mean()                 # optical axis is center of unclipped fov
+                                                            # clip beam overlap (o top, e bottom)
+        edgerow_od[o,(o+1)%2] = np.clip(edgerow_od[o,(o+1)%2],maxoverlaprows,rows-maxoverlaprows)
+        for d in (0,1):                                     # make o and e good data maps overlap
+            edgerow_od[o,d] = trow + (2*d-1)*(np.abs(edgerow_od[o,d] - trow)).min()
+            badrow_oy[o] |= ((d==1) ^ (np.arange(rows) < (edgerow_od[o,d]+d)))
+
+    return edgerow_od, badrow_oy, axisrow_o
+
+# ---------------------------------------------------------------------------------
 def specpolsignalmap(hdu,logfile=sys.stdout):
     """
     Find Second order, Littrow ghost
@@ -47,11 +98,10 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
 
     """
 
-
     with logging(logfile, debug) as log:
         sci_orc = hdu['sci'].data.copy()
         var_orc = hdu['var'].data.copy()
-        isbadbin_orc = (hdu['bpm'].data > 0)
+        badbin_orc = (hdu['bpm'].data > 0)
         wav_orc = hdu['wav'].data.copy()
 
         lam_m = np.loadtxt(datadir+"wollaston.txt",dtype=float,usecols=(0,))
@@ -78,10 +128,10 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
         okprofsm_oyc = np.ones((2,rows,cols),dtype='bool')
         profile_oyc = np.zeros_like(profile_orc)
         profilesm_oyc = np.zeros_like(profile_orc)
-        isbadbin_oyc = np.zeros_like(isbadbin_orc)
+        badbin_oyc = np.zeros_like(badbin_orc)
         var_oyc = np.zeros_like(var_orc)
         wav_oyc = np.zeros_like(wav_orc)
-        isnewbadbin_oyc = np.zeros_like(isbadbin_orc)
+        badbinnew_oyc = np.zeros_like(badbin_orc)
 
         for o in (0,1):
         # find spectrum roughly from max of central cut, then within narrow curved aperture
@@ -118,11 +168,11 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
             for c in range(cols):
                 profile_oyc[o,:,c] = shift(profile_orc[o,:,c],drow_oc[o,c],order=1)
                 profilesm_oyc[o,:,c] = shift(profilesm_orc[o,:,c],drow_oc[o,c],order=1)
-                isbadbin_oyc[o,:,c] = shift(isbadbin_orc[o,:,c].astype(int),drow_oc[o,c],cval=1,order=1) > 0.1
+                badbin_oyc[o,:,c] = shift(badbin_orc[o,:,c].astype(int),drow_oc[o,c],cval=1,order=1) > 0.1
                 var_oyc[o,:,c] = shift(var_orc[o,:,c],drow_oc[o,c],order=1)
                 wav_oyc[o,:,c] = shift(wav_orc[o,:,c],drow_oc[o,c],order=1)
-            okprof_oyc[o] = ~isbadbin_oyc[o] & okprof_rc
-            okprofsm_oyc[o] = ~isbadbin_oyc[o] & okprofsm_rc
+            okprof_oyc[o] = ~badbin_oyc[o] & okprof_rc
+            okprofsm_oyc[o] = ~badbin_oyc[o] & okprofsm_rc
 
 #        pyfits.PrimaryHDU(norm_rc.astype('float32')).writeto('norm_rc.fits',clobber=True)
 #        pyfits.PrimaryHDU(normsm_rc.astype('float32')).writeto('normsm_rc.fits',clobber=True)
@@ -132,24 +182,14 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
             
     # Find, mask off fov edge (profile and image), including possible beam overlap
         profile_oy = np.median(profilesm_oyc,axis=-1)
-        np.savetxt('profile_oy.txt',profile_oy.T,fmt="%10.5f")
-        edgerow_od = np.zeros((2,2),dtype=int)
-        isbadrow_oy = np.zeros((2,rows),dtype=bool)
-        axisrow_o = np.zeros(2)
-        maxoverlaprows = 34/rbin                        # for 4' longslit in NIR
-        for d,o in np.ndindex(2,2):                         # _d = (0,1) = (bottom,top)
-            row_y = np.where((d==1) ^ (np.arange(rows) < trow_o[o]))[0][::2*d-1]
-            edgeval = np.median(profile_oy[o,row_y],axis=-1)        
-            hist,bin = np.histogram(profile_oy[o,row_y],bins=32,range=(0,edgeval))
-            histarg = 32 - np.argmax(hist[::-1]<3)      # edge: <3 in hist in decreasing dirn
-            edgeval = bin[histarg]
-            edgerow_od[o,d] = trow_o[o] + (2*d-1)*(np.argmax(profile_oy[o,row_y] <= edgeval))
-            axisrow_o[o] += edgerow_od[o,d]
-            edgerow_od[o,d] = np.clip(edgerow_od[o,d],maxoverlaprows,rows-maxoverlaprows)
-            isbadrow_oy[o] |= ((d==1) ^ (np.arange(rows) < (edgerow_od[o,d]+d)))
-            okprof_oyc[o,isbadrow_oy[o],:] = False            
-            isnewbadbin_oyc[o,isbadrow_oy[o],:] = True 
-        axisrow_o /= 2.
+#        np.savetxt('profile_oy.txt',profile_oy.T,fmt="%10.5f")
+
+        edgerow_od,badrow_oy,axisrow_o = fovedge(profile_oy,rbin)
+
+        okprof_oyc[badrow_oy,:] = False            
+        badbinnew_oyc[badrow_oy,:] = True 
+
+        pyfits.PrimaryHDU(badbinnew_oyc.astype('uint8')).writeto('badbinnew_oyc.fits',clobber=True) 
 
         log.message('Optical axis row:  O    %4i     E    %4i' % tuple(axisrow_o), with_header=False)
         log.message('Target center row: O    %4i     E    %4i' % tuple(trow_o), with_header=False)
@@ -175,7 +215,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
 
     # First, look for second order as feature in spatial direction
         ghost_oyc = convolve1d(profilesm_oyc,kernel,axis=1,mode='constant',cval=0.)
-        isbadghost_oyc = (~okprofsm_oyc | isbadbin_oyc | isnewbadbin_oyc)     
+        isbadghost_oyc = (~okprofsm_oyc | badbin_oyc | badbinnew_oyc)     
         isbadghost_oyc |= convolve1d(isbadghost_oyc.astype(int),kernelbkg,axis=1,mode='constant',cval=1) != 0
         for o in(0,1): isbadghost_oyc[o,trow_o[o]-3*fwhm/2:trow_o[o]+3*fwhm/2,:] = True
         ghost_oyc *= (~isbadghost_oyc).astype(int)                
@@ -220,7 +260,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
             wav2nd0,wav2nd1 = wav_oyc[0,trow_o[0],[col2nd0,col2nd1]]
             okprof_oyc &= (~is2nd_oyc)
             okprofsm_oyc &= (~is2nd_oyc)
-            isnewbadbin_oyc |= is2nd_oyc
+            badbinnew_oyc |= is2nd_oyc
             isbadghost_oyc |= is2nd_oyc
             ghost_oyc *= (~isbadghost_oyc).astype(int)                     
             log.message('2nd order masked,     strength %7.4f, wavel %7.1f - %7.1f (/2)' \
@@ -273,7 +313,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
             wavlitt = wav_oyc[0,trow_o[0],collitt]
             strengthlitt = dprofile_yc[littbox_yc].max()
             okprof_oyc[islitt_oyc] = False
-            isnewbadbin_oyc |= islitt_oyc
+            badbinnew_oyc |= islitt_oyc
             isbadghost_Yc[littbox_Yc] = True
             ghost_Yc[littbox_Yc] = 0.
             
@@ -291,6 +331,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
         nbr_Y = convolve1d(profile_Y,kernel,mode='constant',cval=0.)
         Yownbr = np.where(nbr_Y==nbr_Y[okprof_Y].max())[0]
         strengthnbr = nbr_Y[Yownbr]
+        np.savetxt("nbrdata_Y.txt",np.vstack((profile_Y,nbr_Y,okprof_Y.astype(int))).T,fmt="%8.5f %8.5f %3i")
 
         log.message('Brightest neighbor:   strength %7.4f, ypos %5.1f"' \
                             % (strengthnbr,(Yownbr-Rows/2)*(rbin/8.)), with_header=False)         
@@ -315,7 +356,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
                    
     # iterate once, using mean outside of skylines      
         for o in (0,1):
-            bkg_oyc[o] = blksmooth2d(profilesm_oyc[o],(okprof_oyc & ~isline_oyc & ~isbadrow_oy[:,:,None])[o], \
+            bkg_oyc[o] = blksmooth2d(profilesm_oyc[o],(okprof_oyc & ~isline_oyc & ~badrow_oy[:,:,None])[o], \
                     rblk,cblk,0.25,mode="mean")
         okprof_oyc &= (bkg_oyc > 0.)&(var_oyc > 0)
         
@@ -328,8 +369,8 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
     # first mask out non-background rows
         linebins_oy = isline_oyc.sum(axis=2)
         median_oy = np.median(linebins_oy,axis=1)[:,None]
-        isbadrow_oy |= (linebins_oy == 0) | (linebins_oy > 1.5*median_oy)
-        isline_oyc[isbadrow_oy,:] = False
+        badrow_oy |= (linebins_oy == 0) | (linebins_oy > 1.5*median_oy)
+        isline_oyc[badrow_oy,:] = False
     # count up linebins at each wavelength
         wavmin,wavmax = wav_oyc[:,rows/2,:].min(),wav_oyc[:,rows/2,:].max()
         dwav = np.around((wavmax-wavmin)/cols,1)
@@ -368,12 +409,12 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
         int_loy = np.zeros((lines,2,rows)); intsm_loy = np.zeros_like(int_loy)
         intvar_lo = np.zeros((lines,2))          
         corerows = ((profile_Y - profile_Y[profile_Y>0].min()) > 0.01).sum()
-        isbadrow_oy |= (np.abs((np.arange(rows) - trow_o[:,None])) < corerows/2)     
+        badrow_oy |= (np.abs((np.arange(rows) - trow_o[:,None])) < corerows/2)     
 
         for l,o in np.ndindex(lines,2):
             col_yc = np.add.outer(col1_loy[l,o],np.arange(cols_l[l])).astype(int)
             line_oyc[o][np.arange(rows)[:,None],col_yc] = l
-            okrow_y = okprof_oyc[o][np.arange(rows)[:,None],col_yc].all(axis=1) & ~isbadrow_oy[o]
+            okrow_y = okprof_oyc[o][np.arange(rows)[:,None],col_yc].all(axis=1) & ~badrow_oy[o]
             inrow_y = np.where(okrow_y)[0]
             int_loy[l,o] = (skyline_oyc[o][np.arange(rows)[:,None],col_yc].sum(axis=1)) * okrow_y
             outrow_y = np.arange(inrow_y.min(),inrow_y.max()+1)       
@@ -403,7 +444,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
                          & (wavautocol < wav_w[argwav2_l[line_m]]))
             if isautocol_m.sum():
                 lineac = line_m[np.where(isautocol_m)[0]]
-                isnewbadbin_oyc |= (line_oyc == lineac)
+                badbinnew_oyc |= (line_oyc == lineac)
                 
                 log.message(('Autocoll laser masked: %6.1f - %6.1f Ang') \
                     % (wav_w[argwav1_l[lineac]],wav_w[argwav2_l[lineac]]), with_header=False)   
@@ -413,7 +454,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
         if masklines>0:                                        
             wav_m = 0.5*(wav_w[argwav1_l[line_m]]+wav_w[argwav2_l[line_m]])
             okneb_oy = (np.abs(np.arange(rows) - trow_o[:,None]) < rows/6)                             
-            isnewbadbin_oyc |= ~okneb_oy[:,:,None] & (line_oyc == line_m[:,None,None,None]).any(axis=0)
+            badbinnew_oyc |= ~okneb_oy[:,:,None] & (line_oyc == line_m[:,None,None,None]).any(axis=0)
 
             log.message(('Nebula partial mask:   '+masklines*'%6.1f '+' Ang') \
                         % tuple(wav_m), with_header=False)
@@ -459,9 +500,9 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
                 skyflat_orc[o] = (np.dot(aout_fC[:,:Cofs],lsqcof_C) + 1.).reshape((rows,cols))
 
     # compute psf from unsmooth profile, new badpixmap, map of background continuum in original geometry                
-        isbkgcont_oyc = ~(isnewbadbin_oyc | isline_oyc | isbadrow_oy[:,:,None])
-        isnewbadbin_orc = np.zeros_like(isbadbin_orc)
-        isbkgcont_orc = np.zeros_like(isbadbin_orc)
+        isbkgcont_oyc = ~(badbinnew_oyc | isline_oyc | badrow_oy[:,:,None])
+        badbinnew_orc = np.zeros_like(badbin_orc)
+        isbkgcont_orc = np.zeros_like(badbin_orc)
         psf_orc = np.zeros_like(profile_orc)      
         isedge_oyc = (np.arange(rows)[:,None] < edgerow_od[:,None,None,0]) | \
             (np.indices((rows,cols))[0] > edgerow_od[:,None,None,1])
@@ -478,7 +519,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
             for c in range(cols):
                 psf_orc[o,:,c] = shift(profile_oyc[o,:,c],-drow_oc[o,c],cval=0,order=1)
                 isbkgcont_orc[o,:,c] = shift(isbkgcont_oyc[o,:,c].astype(int),-drow_oc[o,c],cval=0,order=1) > 0.1
-                isnewbadbin_orc[o,:,c] = shift(isnewbadbin_oyc[o,:,c].astype(int),-drow_oc[o,c],cval=1,order=1) > 0.1
+                badbinnew_orc[o,:,c] = shift(badbinnew_oyc[o,:,c].astype(int),-drow_oc[o,c],cval=1,order=1) > 0.1
             targetrow_od[o,0] = trow_o[o] - np.argmax(isbkgcont_orc[o,trow_o[o]::-1,cols/2] > 0)
             targetrow_od[o,1] = trow_o[o] + np.argmax(isbkgcont_orc[o,trow_o[o]:,cols/2] > 0)
         maprow_od = np.vstack((edgerow_od[:,0],targetrow_od[:,0],targetrow_od[:,1],edgerow_od[:,1])).T
@@ -486,7 +527,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
 
 #        pyfits.PrimaryHDU(psf_orc.astype('float32')).writeto('psf_orc.fits',clobber=True) 
 #        pyfits.PrimaryHDU(skyflat_orc.astype('float32')).writeto('skyflat_orc.fits',clobber=True)         
-        return psf_orc,skyflat_orc,isnewbadbin_orc,isbkgcont_orc,maprow_od,drow_oc
+        return psf_orc,skyflat_orc,badbinnew_orc,isbkgcont_orc,maprow_od,drow_oc
                         
 #---------------------------------------------------------------------------------------
 if __name__=='__main__':
@@ -494,6 +535,6 @@ if __name__=='__main__':
     for file in infilelist:
         hdulist = pyfits.open(file)
         name = os.basename(file).split('.')[0]
-        psf_orc,skyflat_orc,isnewbadbin_orc,maprow_od,drow_oc = specpolsignalmap(hdulist)
+        psf_orc,skyflat_orc,badbinnew_orc,maprow_od,drow_oc = specpolsignalmap(hdulist)
         pyfits.PrimaryHDU(psf_orc.astype('float32')).writeto(name+'_psf.fits',clobber=True) 
         pyfits.PrimaryHDU(skyflat_orc.astype('float32')).writeto(name+'_skyflat.fits',clobber=True) 
