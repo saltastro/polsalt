@@ -113,9 +113,11 @@ def specpolextract(infilelist, logfile='salt.log'):
             if slitid[0] =="P": slitwidth = float(slitid[2:5])/10.
             else: slitwidth = float(slitid) 
 
-            hdusum = pyfits.PrimaryHDU(header=hdu0[0].header)    
+            groupname = objectlist[objno_i[ilist[0]]]+"_c"+str(confno_i[ilist[0]])
+            hdusum = pyfits.PrimaryHDU(header=hdu0[0].header)   
             hdusum = pyfits.HDUList(hdusum)
-            header=hdu0['SCI'].header.copy()           
+            hdusum[0].header.update('OBJECT',groupname)     
+            header=hdu0['SCI'].header.copy()       
             hdusum.append(pyfits.ImageHDU(data=image_orc, header=header, name='SCI'))
             hdusum.append(pyfits.ImageHDU(data=var_orc, header=header, name='VAR'))
             hdusum.append(pyfits.ImageHDU(data=badbinall_orc.astype('uint8'), header=header, name='BPM'))
@@ -123,7 +125,7 @@ def specpolextract(infilelist, logfile='salt.log'):
 
             psf_orc,skyflat_orc,badbinnew_orc,isbkgcont_orc,maprow_od,drow_oc = \
                 specpolsignalmap(hdusum,logfile=logfile)
-
+ 
             maprow_ocd = maprow_od[:,None,:] + np.zeros((2,cols,4)) 
             maprow_ocd[:,:,[1,2]] -= drow_oc[:,:,None]      # edge is straight, target curved
 
@@ -137,8 +139,8 @@ def specpolextract(infilelist, logfile='salt.log'):
             badbinall_orc |= badbinnew_orc
             badbinone_orc |= badbinnew_orc
             hdusum['BPM'].data = badbinnew_orc.astype('uint8')
-            groupname = objectlist[objno_i[ilist[0]]]+"_c"+str(confno_i[ilist[0]])+".fits"
-            hdusum.writeto(groupname,clobber=True)
+
+            hdusum.writeto(groupname+".fits",clobber=True)
 
 #            pyfits.PrimaryHDU(var_orc.astype('float32')).writeto('var_orc1.fits',clobber=True) 
 #            pyfits.PrimaryHDU(badbinnew_orc.astype('uint8')).writeto('badbinnew_orc.fits',clobber=True)   
