@@ -21,7 +21,8 @@ from iraf import pysalt
 from saltobslog import obslog
 from saltsafelog import logging
 
-from . import reddir
+import reddir
+# from . import reddir
 datadir = os.path.dirname(inspect.getfile(reddir)) + "/data/"
 np.set_printoptions(threshold=np.nan)
 debug = True
@@ -50,7 +51,6 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
     # set up some files that will be needed
     obsdate = os.path.basename(infile_list[0]).split('.')[0][-12:-4]
 
-    logfile = 'specpol' + obsdate + '.log'
     patternfile = open(datadir + 'wppaterns.txt', 'r')
     with logging(logfile, debug) as log:
 

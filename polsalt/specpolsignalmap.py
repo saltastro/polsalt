@@ -139,7 +139,6 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir):
 #    isgap_c = (~okprofsm_oyc).all(axis=1).all(axis=0)
     isgap_c = (~okprof_oyc).all(axis=1).all(axis=0)
     isgap_c[[0,cols-1]] = True                  # the edges are gaps, too
-
     skyline_oyc = (profilesm_oyc - bkg_oyc)*okprof_oyc
     isline_oyc = np.zeros((2,rows,cols),dtype=bool)
     isline_oyc[okprof_oyc] = (skyline_oyc[okprof_oyc] > 3.*np.sqrt(var_oyc[okprof_oyc]))
@@ -164,6 +163,7 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir):
     median_oy = np.median(linebins_oy,axis=1)[:,None]
     badlinerow_oy = (linebins_oy == 0) | (linebins_oy > 1.5*median_oy)
     isline_oyc[badlinerow_oy,:] = False
+
   # count up linebins at each wavelength
     wavmin,wavmax = wav_oyc[:,rows/2,:].min(),wav_oyc[:,rows/2,:].max()
     dwav = np.around((wavmax-wavmin)/cols,1)
@@ -172,7 +172,9 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir):
     wavs = wav_w.shape[0]
     argwav_oyc = ((wav_oyc-wavmin)/dwav).astype(int)
     gapwav_W = wav_oyc[:,:,isgap_c].flatten()       # wavelengths which are in gap somewhere in image
-    isgap_w = np.abs(wav_w - gapwav_W[:,None]).min(axis=0) < dwav/2.
+    isgap_w = np.zeros((wavs),dtype=bool)
+    for w in range(wavs): 
+        if (np.abs(wav_w[w] - gapwav_W).min()) < dwav/2.: isgap_w[w] = True
     wavhist_w = (argwav_oyc[isline_oyc][:,None] == np.arange(wavs)).sum(axis=0)
     wavhist_w[isgap_w] = -1
     np.savetxt(sciname+"_wavhist.txt",np.vstack((wav_w,wavhist_w)).T,fmt="%6.1f %4i")
@@ -216,13 +218,15 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir):
     intsm_loy = np.zeros_like(int_loy)
     intvar_lo = np.zeros((lines,2))
     axisval_lo = np.zeros((lines,2))          
-    badlinerow_oy |= (np.abs((np.arange(rows) - trow_o[:,None])) < corerows/2)     
+    badlinerow_oy |= (np.abs((np.arange(rows) - trow_o[:,None])) < corerows/2)
+    enoughrow = 0.75    # line does not cover enough of slit length
+    varlim = 0.04       # line profile is not smooth
 
     for l,o in np.ndindex(lines,2):
         col_yc = np.add.outer(col_loy[l,o],np.arange(-dcol_l[l]/2,dcol_l[l]/2)).astype(int)
         line_oyc[o][np.arange(rows)[:,None],col_yc] = l
         okrow_y = okprof_oyc[o][np.arange(rows)[:,None],col_yc].all(axis=1) & ~badlinerow_oy[o]
-        if okrow_y.sum() < 0.75*(rows - badlinerow_oy[o].sum()): continue
+        if okrow_y.sum() < enoughrow*(rows - badlinerow_oy[o].sum()): continue
         inrow_y = np.where(okrow_y)[0]
         int_loy[l,o] = (skyline_oyc[o][np.arange(rows)[:,None],col_yc].sum(axis=1)) * okrow_y
         outrow_y = np.arange(inrow_y.min(),inrow_y.max()+1)       
@@ -233,6 +237,7 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir):
         intsm_loy[l,o,outrow_y] = np.polyval(polycof,outrow_y)/axisval_lo[l,o]
         int_loy[l,o] /= axisval_lo[l,o]
         intvar_lo[l,o] = (int_loy[l,o] - intsm_loy[l,o])[okrow_y].var()
+        if intvar_lo[l,o] > varlim: axisval_lo[l,o] = 0.
     removeline_l = (axisval_lo == 0.).any(axis=1)
     np.savetxt(sciname+"_int_oly.txt",np.hstack((intvar_lo.T.reshape(-1,1),axisval_lo.T.reshape(-1,1), \
             int_loy.transpose(1,0,2).reshape((2*lines,-1)))).T,fmt="%9.5f")
@@ -250,13 +255,13 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir):
     masklines = line_m.shape[0]
     if masklines>0:
         wavautocol = 6697.
-        isautocol_m = (np.abs(wavautocol - wav_l[line_m])) < dlam_l[line_m]/2.
+        isautocol_m = (np.abs(wavautocol - wav_l[line_m])) < dwav_l[line_m]/2.
         if isautocol_m.sum():
             lineac = line_m[np.where(isautocol_m)[0]]
             badbinmore_oyc |= (line_oyc == lineac)
                 
             log.message(('Autocoll laser masked: %6.1f - %6.1f Ang') \
-                % (wav_l[lineac]-dwav_[lineac]/2.,wav_l[lineac]+dwav_[lineac]/2.), with_header=False)   
+                % (wav_l[lineac]-dwav_l[lineac]/2.,wav_l[lineac]+dwav_l[lineac]/2.), with_header=False)   
             line_m = np.delete(line_m,np.where(isautocol_m)[0])
 
     masklines = line_m.shape[0]
@@ -269,10 +274,11 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir):
                     % tuple(wav_m), with_header=False)
 
     lsqcof_oC = np.zeros((2,4))
+    Cofs = 0
     if skylines == 0:
         log.message('\nNo sky lines found', with_header=False)
-        Cofs = 0                                                      
-    elif skylines>1:
+                                                      
+    else:
         wav_s = ((lam_u*flux_u)[:,None]*isid_ul).sum(axis=0)[line_s]/fsky_l[line_s]
 
         log.message('\nSkyflat formed from %3i sky lines %5.1f - %5.1f Ang' \
@@ -280,8 +286,7 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir):
 
         Cofs = 3
         Coferrlim = 0.005
-
-        if skylines <4: Cofs = 2
+        if (skylines <4) | ((wav_s.max()-wav_s.min()) < (wav_w.max()-wav_w.min())/2): Cofs = 2
         skyflatfile = file(sciname+"_skyflatcofs.txt",'a')
         skyflatfile.truncate(0)
         for o in (0,1):
@@ -305,7 +310,7 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir):
 
 
 # ---------------------------------------------------------------------------------
-def specpolsignalmap(hdu,logfile=sys.stdout):
+def specpolsignalmap(hdu,logfile=sys.stdout,debug=False):
     """
     Find FOV edge, Second order, Littrow ghost
     Find sky lines and produce sky flat for 2d sky subtraction
@@ -406,7 +411,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
             
     # Find, mask off fov edge (profile and image), including possible beam overlap
         profile_oy = np.median(profilesm_oyc,axis=-1)
-#        np.savetxt('profile_oy.txt',profile_oy.T,fmt="%10.5f")
+#        if debug: np.savetxt('profile_oy.txt',profile_oy.T,fmt="%10.5f")
 
         edgerow_od,badrow_oy,axisrow_o = fovedge(profile_oy,rbin)
 
@@ -517,7 +522,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
         Rowlitt,collitt = np.argwhere(litt_Yc == litt_Yc[:col2nd0].max())[0]
         littbox_Yc = np.meshgrid(boxrange+Rowlitt,boxrange+collitt)
 
-        np.savetxt("stdghost_c.txt",stdghost_c.T,fmt="%10.5f")
+        if debug: np.savetxt("stdghost_c.txt",stdghost_c.T,fmt="%10.5f")
 #        pyfits.PrimaryHDU(litt_Yc.astype('float32')).writeto('litt_Yc.fits',clobber=True)
 #        pyfits.PrimaryHDU(isbadlitt_Yc.astype('uint8')).writeto('isbadlitt_Yc.fits',clobber=True)
 
@@ -552,7 +557,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
         avoid = int(np.around(fwhm/2)) +3
         okprof_Y[range(avoid) + range(Rows/2-avoid,Rows/2+avoid) + range(Rows-avoid,Rows)] = False
         nbr_Y = convolve1d(profile_Y,kernel,mode='constant',cval=0.)
-        np.savetxt("nbrdata_Y.txt",np.vstack((profile_Y,nbr_Y,okprof_Y.astype(int))).T,fmt="%8.5f %8.5f %3i")
+        if debug: np.savetxt("nbrdata_Y.txt",np.vstack((profile_Y,nbr_Y,okprof_Y.astype(int))).T,fmt="%8.5f %8.5f %3i")
         nbrmask = 0.003
 
         while nbr_Y[okprof_Y].max() > nbrmask:
@@ -624,7 +629,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout):
         maprow_od = np.vstack((edgerow_od[:,0],targetrow_od[:,0],targetrow_od[:,1],edgerow_od[:,1])).T
         maprow_od += np.array([-2,-2,2,2])
 
-        pyfits.PrimaryHDU(psf_orc.astype('float32')).writeto(sciname+"_psf.fits",clobber=True) 
+        pyfits.PrimaryHDU(psf_orc.astype('float32')).writeto(sciname+"_psf_orc.fits",clobber=True) 
         pyfits.PrimaryHDU(skyflat_orc.astype('float32')).writeto(sciname+"_skyflat.fits",clobber=True)
          
         return psf_orc,skyflat_orc,badbinnew_orc,isbkgcont_orc,maprow_od,drow_oc
