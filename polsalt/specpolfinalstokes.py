@@ -20,10 +20,11 @@ from saltsafelog import logging
 
 import reddir
 datadir = os.path.dirname(inspect.getfile(reddir))+"/data/"
+
 np.set_printoptions(threshold=np.nan)
 debug = True
 
-def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log'):
+def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log',debug=False):
     """Combine the raw stokes and apply the polarimetric calibrations
 
     Parameters
@@ -60,12 +61,13 @@ def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log'):
                 log.message('File '+infile_list[i]+' is not a raw stokes file.'  , with_header=False) 
                 continue
             allrawlist.append([i,object,config,wvplt,count])
-        configlist = list(set(ele[2] for ele in allrawlist))        # unique configs
+        configlist = sorted(list(set(ele[2] for ele in allrawlist)))       # unique configs
 
     # correct raw stokes for track (TBS)
 
     # do one config at a time, since different configs may have different number of wavelengths
         for conf in configlist:
+            log.message("\nConfiguration: %s" % conf, with_header=False) 
             rawlist = [entry for entry in allrawlist if entry[2]==conf]
             for col in (4,3,1,2): rawlist = sorted(rawlist,key=operator.itemgetter(col))            
             rawstokes = len(rawlist)
@@ -85,8 +87,8 @@ def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log'):
                         hpa_l -= (telpa % 180)
                     else:
                         pacaltype ="Instrumental"
-                    calversion = (pacaltype+'  '+calversion)
-                    log.message('Calibration Version: '+calversion, with_header=False) 
+                    calinfo = (pacaltype+'  '+calversion)
+                    log.message('  Calibration: '+calinfo, with_header=False) 
            
                 wppat = pyfits.getheader(infile_list[i],0)['WPPATERN']
                 wav0 = pyfits.getheader(infile_list[i],'SCI')['CRVAL1']
@@ -107,7 +109,10 @@ def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log'):
             bpm_ksw = np.zeros_like(stokes_ksw).astype(int)
             wav_kw = np.zeros((combstokes,cols))
             chisqstokes_kw = np.zeros_like(wav_kw)
-            obslist = [];   obsobject = ''; obsconfig = ''
+            obslist = []
+            obsobject = ''
+            obsconfig = ''
+            chisqlist = [[]]
             for k in range(combstokes):
                 j,object,config,wvplt,count,wppat = comblist[k]
                 stokes_ksw[k] =  stokes_jsw[j-int(count)+1:j+1].sum(axis=0)
@@ -127,41 +132,48 @@ def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log'):
                         chisqstokes_kw[k,bok] += ((stokes_w[bok]-combstokes_w[bok])/errstokes_w[bok])**2
                     chisqstokes_kw[k] /= int(count)-1
                     chisqstokes = chisqstokes_kw[k].sum()/bok.sum()
-                    log.message("Chisq/dof Filter Pair %s: %7.2f" % (wvplt,chisqstokes), with_header=False)
+                    chisqlist[-1].append(chisqstokes)
+                    log.message("  Chisq/dof Filter Pair %s: %7.2f" % (wvplt,chisqstokes), with_header=False)
                 if ((object != obsobject) | (config != obsconfig)):
                     obslist.append([k,object,config,wppat,1])
+                    chisqlist.append([])
                     obsobject = object; obsconfig = config
                 else:
                     obslist[-1][4] +=1
                                                                      
-        # for each obs combine stokes, apply efficiency and PA calibration as appropriate for pattern
+        # for each obs combine stokes, apply efficiency and PA calibration as appropriate for pattern, and save
             obss = len(obslist)
             for obs in range(obss):
                 k,object,config,wppat,pairs = obslist[obs]
+                obsname = object+"_"+config
+                log.message("\n  Observation: %s" % obsname, with_header=False)
 #                print k,object,config,wppat,pairs
                 finstokes = patternstokes[wppat]
                 if pairs != patternpairs[wppat]:
-                    log.message('Not a complete pattern, skipping observation', with_header=False) 
+                    log.message('  Not a complete pattern, skipping observation', with_header=False) 
                     continue
-                stokes_fw = np.zeros((finstokes,cols)); var_fw = np.zeros_like(stokes_fw)
-                wok = bpm_ksw[k:k+pairs,:].sum(axis=0).sum(axis=0) == 0
-                bpm_fw = np.repeat((np.logical_not(wok))[None,:],finstokes,axis=0)
+                stokes_fw = np.zeros((finstokes,cols))
+                var_fw = np.zeros_like(stokes_fw)
+                ok_fw = bpm_ksw[k:k+pairs,:].sum(axis=0) == 0
+                ok_w = ok_fw.all(axis=0)
+                bpm_fw = np.repeat((np.logical_not(ok_w))[None,:],finstokes,axis=0)
                 stokes_fw[0] = stokes_ksw[k:k+pairs,0].sum(axis=0)/pairs
-                var_fw[0] = var_ksw[k:k+pairs,0].sum(axis=0)/pairs**2           
+                var_fw[0] = var_ksw[k:k+pairs,0].sum(axis=0)/pairs**2        
 
                 if wppat.count('Linear'):
                     var_fw = np.vstack((var_fw,np.zeros(cols)))           # add QU covariance
                     if wppat=='Linear':
-                        stokes_fw[1:,wok] = stokes_ksw[k:k+2,1,wok]*(stokes_fw[0,wok]/stokes_ksw[k:k+2,0,wok])
-                        var_fw[1:3,wok] = var_ksw[k:k+2,1,wok]*(stokes_fw[0,wok]/stokes_ksw[k:k+2,0,wok])**2
+                        stokes_fw[1:,ok_w] = stokes_ksw[k:k+2,1,ok_w]*(stokes_fw[0,ok_w]/stokes_ksw[k:k+2,0,ok_w])
+                        var_fw[1:3,ok_w] = var_ksw[k:k+2,1,ok_w]*(stokes_fw[0,ok_w]/stokes_ksw[k:k+2,0,ok_w])**2
                     elif wppat=='Linear-Hi':
                 # for Linear-Hi, must go to normalized stokes in order for the pair combination to cancel systematic errors
                         nstokes_pw = np.zeros((pairs,cols)); nvar_pw = np.zeros((pairs,cols))
                         nstokes_fw = np.zeros((finstokes,cols)); nvar_fw = np.zeros((finstokes+1,cols))
-                        nstokes_pw[:,wok] = stokes_ksw[k:k+pairs,1,wok]/stokes_ksw[k:k+pairs,0,wok]
-                        nvar_pw[:,wok] = var_ksw[k:k+pairs,1,wok]/(stokes_ksw[k:k+pairs,0,wok])**2
-                        np.savetxt("nstokes.txt",np.vstack((wok.astype(int),nstokes_pw)).T,fmt="%3i "+4*"%10.6f ")
-                        np.savetxt("nvar.txt",np.vstack((wok.astype(int),nvar_pw)).T,fmt="%3i "+4*"%14.9f ")
+                        nstokes_pw[:,ok_w] = stokes_ksw[k:k+pairs,1,ok_w]/stokes_ksw[k:k+pairs,0,ok_w]
+                        nvar_pw[:,ok_w] = var_ksw[k:k+pairs,1,ok_w]/(stokes_ksw[k:k+pairs,0,ok_w])**2
+                        if debug:                        
+                            np.savetxt(obsname+"_nstokes.txt",np.vstack((ok_w.astype(int),nstokes_pw)).T,fmt="%3i "+4*"%10.6f ")
+                            np.savetxt(obsname+"_nvar.txt",np.vstack((ok_w.astype(int),nvar_pw)).T,fmt="%3i "+4*"%14.9f ")
                         nstokes_fw[1] = 0.5*(nstokes_pw[0] + (nstokes_pw[1]-nstokes_pw[3])/np.sqrt(2.))
                         nstokes_fw[2] = 0.5*(nstokes_pw[2] + (nstokes_pw[1]+nstokes_pw[3])/np.sqrt(2.))
                         nvar_fw[1] = 0.25*(nvar_pw[0] + (nvar_pw[1]+nvar_pw[3])/2.)
@@ -169,9 +181,27 @@ def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log'):
                         nvar_fw[3] = 0.25*((nvar_pw[1] - nvar_pw[3])/2.)
                         stokes_fw[1:] = nstokes_fw[1:]*stokes_fw[0]
                         var_fw[1:] = nvar_fw[1:]*stokes_fw[0]**2
-                        chisqq = ((nstokes_pw[0,wok] - nstokes_fw[1,wok])**2/nvar_fw[1,wok]).sum()/wok.sum() 
-                        chisqu = ((nstokes_pw[2,wok] - nstokes_fw[2,wok])**2/nvar_fw[2,wok]).sum()/wok.sum()
-                        log.message("Chisq/dof Linear-Hi Q,U: %7.2f %7.2f" % (chisqq,chisqu), with_header=False) 
+                        chisqq = ((nstokes_pw[0,ok_w] - nstokes_fw[1,ok_w])**2/nvar_fw[1,ok_w]).sum()/ok_w.sum() 
+                        chisqu = ((nstokes_pw[2,ok_w] - nstokes_fw[2,ok_w])**2/nvar_fw[2,ok_w]).sum()/ok_w.sum()
+                        chisqlist[obs].append(chisqq)
+                        chisqlist[obs].append(chisqu)
+                        log.message("    Chisq/dof Linear-Hi Q,U: %7.2f %7.2f" % (chisqq,chisqu), with_header=False) 
+
+               # calculate, print estimated systematic error from chisq mean
+                    if len(chisqlist[obs]):
+                        chisqdof = np.array(chisqlist[obs]).mean()
+                        dofs = float(ok_fw[0].sum())
+                        chisqdoferr = np.sqrt(2./dofs)
+                        syserr = 0.         # estimate systematic error using noncentral chisq distribution
+                        if (chisqdof - 1.) > 3.*chisqdoferr:
+                            nvar_fw = np.zeros_like(var_fw)
+                            nvar_fw[:,ok_fw[0]] = var_fw[:,ok_fw[0]]/stokes_fw[0,ok_fw[0]]**2
+                            syserr = np.sqrt(dofs*(chisqdof - 1.)/(1./nvar_fw[1,ok_fw[1]]).sum())
+                            print syserr 
+              
+                        log.message(("    Mean chisq/dof: %5.2f  Estimated sys %%error: %5.2f") % \
+                            (chisqdof,100.*syserr), with_header=False)
+
                     heff_w = interp1d(wav_l,heff_l,kind='cubic')(wav_kw[k])
                     par_w = -interp1d(wav_l,hpa_l,kind='cubic')(wav_kw[k])
                     c_w = np.cos(2.*np.radians(par_w)); s_w = np.sin(2.*np.radians(par_w))
@@ -190,12 +220,16 @@ def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log'):
                     hduout['SCI'].header.update('CTYPE3','I,Q,U')
                     hduout['VAR'].data = var_fw.astype('float32').reshape((4,1,-1))
                     hduout['VAR'].header.update('CTYPE3','I,Q,U,QU')
+
                     hduout['BPM'].data = bpm_fw.astype('uint8').reshape((3,1,-1))
                     hduout['BPM'].header.update('CTYPE3','I,Q,U')
-                    hduout[0].header.update('POLCAL',calversion)
+                    hduout[0].header.update('POLCAL',calinfo)
+                    if len(chisqlist[obs]): 
+                        hduout[0].header.update('SYSERR',100.*syserr, \
+                            'estimated % systematic error')
                     outfile = object+'_'+config+'_stokes.fits'
                     hduout.writeto(outfile,clobber=True,output_verify='warn')
-                    log.message('\n'+outfile+' Stokes I,Q,U', with_header=False)
+                    log.message('\n    '+outfile+' Stokes I,Q,U', with_header=False)
                      
 #               elif wppat.count('Circular'):  TBS 
 
