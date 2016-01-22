@@ -1,5 +1,5 @@
 import os, sys, glob
-reddir = '/d/carol/Synched/software/SALT/sandboxcopy/polSALT/polsalt/'
+reddir = '/d/carol/Synched/software/SALT/polsaltcopy/polsalt/'
 
 sys.path.append(reddir)
 datadir = reddir+'data/'
@@ -23,9 +23,14 @@ os.chdir('sci')
 
 #basic image reductions
 infile_list = glob.glob('../raw/P*fits')
+
+#imred(infile_list, './', datadir+'bpm_rss_11.fits', cleanup=False)
 imred(infile_list, './', datadir+'bpm_rss_11.fits', cleanup=True)
 
 #basic polarimetric reductions
+# debug=True
+
+debug=False
 logfile='specpol'+obsdate+'.log'
 
 #target and wavelength map
@@ -34,17 +39,21 @@ linelistlib=""
 specpolwavmap(infile_list, linelistlib=linelistlib, inter=True, logfile=logfile)
 
 #background subtraction and extraction
+#infile_list = sorted(glob.glob('wm*099.fits')+glob.glob('wm*10[0-6].fits'))    # optional subselection
+
 infile_list = sorted(glob.glob('wm*fits'))
-specpolextract(infile_list, logfile=logfile)
+specpolextract(infile_list, logfile=logfile, debug=debug)
 
 #raw stokes
-#infile_list = sorted(glob.glob('e*0[6-9].fits'))       # subselection
+#infile_list = sorted(glob.glob('e*06[8-9].fits')+glob.glob('e*07[0-1].fits')+glob.glob('e*07[4-7].fits'))       # optional subselection
+
 infile_list = sorted(glob.glob('e*fits'))
 specpolrawstokes(infile_list, logfile=logfile)
 
 #final stokes
 #polcal = 'polcal0.txt'                                 # null calibration
-#infile_list = sorted(glob.glob('*_h[0,2]*.fits'))      # subselection 
+#infile_list = sorted(glob.glob('*_h[0,2]*.fits'))      # optional subselection 
+
 polcal = 'polcal.txt'
 infile_list = sorted(glob.glob('*_h*.fits'))
-specpolfinalstokes(infile_list, polcal=polcal, logfile=logfile)
+specpolfinalstokes(infile_list, polcal=polcal, logfile=logfile, debug=debug)
