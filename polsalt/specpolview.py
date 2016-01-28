@@ -172,6 +172,8 @@ def specpolview(infile_list, bincode='unbin', saveoption = ''):
         plotcolor = plotcolor_o[obs % len(plotcolor_o)]
     # plot intensity
         label = name
+        if name.count("_") ==0:             # diffsum multiplots
+            label = name[-4:] 
         namelist.append(name)
         ww = -1; 
         while (bpm_sw[0,ww+1:]==0).sum() > 0:
@@ -269,7 +271,7 @@ def specpolview(infile_list, bincode='unbin', saveoption = ''):
         plot_s[2].set_ylim(bottom=min(ymin,(ymin+ymax)/2.-5.),top=max(ymax,(ymin+ymax)/2.+5.))
 
     if obss>1: 
-       plot_s[0].legend(fontsize='x-small',loc='lower center')
+       plot_s[0].legend(fontsize='x-small',loc='upper left')
     else: 
        plot_s[0].set_title(name+"   "+obsdate) 
 
@@ -278,9 +280,13 @@ def specpolview(infile_list, bincode='unbin', saveoption = ''):
         for (i,ys) in enumerate(ylimlist):
             if ((len(ys)>0) & ((i % 2)==0)): plot_s[plots-i/2-1].set_ylim(bottom=float(ys))
             if ((len(ys)>0) & ((i % 2)==1)): plot_s[plots-i/2-1].set_ylim(top=float(ys))
-        objlist = sorted(list(set(namelist[b].split("_")[0] for b in range(obss))))
-        conflist = sorted(list(set(namelist[b].split("_")[1] for b in range(obss))))
-        plotfile = '_'.join(['_'.join(objlist),'_'.join(conflist),plotname,bincode])+'.pdf'
+        if name.count("_"):                 # raw and final stokes files
+            objlist = sorted(list(set(namelist[b].split("_")[0] for b in range(obss))))
+            conflist = sorted(list(set(namelist[b].split("_")[1] for b in range(obss))))
+            objlist.append("_"+conflist)
+            plotfile = '_'.join(['_'.join(objlist),plotname,bincode])+'.pdf'
+        else:                               # diffsum files from diffsum
+            plotfile = namelist[0]+'-'+namelist[-1][-4:]+'.pdf'
         plt.savefig(plotfile,orientation='portrait')
         if os.name=='posix':
             if os.popen('ps -C evince -f').read().count(plotfile)==0: os.system('evince '+plotfile+' &')
