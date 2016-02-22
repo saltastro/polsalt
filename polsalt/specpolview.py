@@ -147,7 +147,7 @@ def specpolview(infile_list, bincode='unbin', saveoption = ''):
 
             fmt_s = ['%8.2f ','%8.4f ','%8.3f ','%8.4f ']
             fmt = 2*(' '+"".join(fmt_s[1:plots]))
-            hdr = 'Obs             Mean '+(5*" ").join(stokeslist[1:plots])+"  "+   \
+            hdr = 'Obs'+(len(name)-3)*' '+'Mean '+(5*" ").join(stokeslist[1:plots])+"  "+   \
                 " Err  ".join(stokeslist[1:plots])+' Err'+'   Syserr'
             if savetext: print "\n",hdr    
 
@@ -283,8 +283,7 @@ def specpolview(infile_list, bincode='unbin', saveoption = ''):
         if name.count("_"):                 # raw and final stokes files
             objlist = sorted(list(set(namelist[b].split("_")[0] for b in range(obss))))
             conflist = sorted(list(set(namelist[b].split("_")[1] for b in range(obss))))
-            objlist.append("_"+conflist)
-            plotfile = '_'.join(['_'.join(objlist),plotname,bincode])+'.pdf'
+            plotfile = '_'.join(objlist+conflist+list([plotname,bincode]))+'.pdf'
         else:                               # diffsum files from diffsum
             plotfile = namelist[0]+'-'+namelist[-1][-4:]+'.pdf'
         plt.savefig(plotfile,orientation='portrait')

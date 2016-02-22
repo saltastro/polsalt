@@ -32,7 +32,7 @@ np.set_printoptions(threshold=np.nan)
 debug = True
 
 # ---------------------------------------------------------------------------------------------
-def bkgsub(hdulist,badbinbkg_orc,isbkgcont_orc,skyflat_orc,maprow_ocd,tnum):
+def bkgsub(hdulist,badbinbkg_orc,isbkgcont_orc,skyflat_orc,maprow_ocd,tnum,debug=False):
     """
     Remove remaining detector bias and sky continuum
     Use Kotulla 2D sky subtract to remove sky lines
@@ -68,12 +68,6 @@ def bkgsub(hdulist,badbinbkg_orc,isbkgcont_orc,skyflat_orc,maprow_ocd,tnum):
     if slitid[0] =="P": slitwidth = float(slitid[2:5])/10.
     else: slitwidth = float(slitid)         # in arcsec
 
-  # evaluate detector bias, for the record, but don't use it 
-  # use median of rows outside of fov at bottom and top of full image (bottom of O, top of E)
-    dtrbkg_dc = np.zeros((2,cols))
-    dtrbkg_dc[0] = np.median(sci_orc[0,2:(maprow_ocd[0,:,0].min()-2)],axis=0)
-    dtrbkg_dc[1] = np.median(sci_orc[1,(maprow_ocd[1,:,3].max()+2):(rows-2)],axis=0)
-
     target_orc = sci_orc
 
   # make background continuum image, smoothed over resolution element
@@ -81,29 +75,34 @@ def bkgsub(hdulist,badbinbkg_orc,isbkgcont_orc,skyflat_orc,maprow_ocd,tnum):
     isedge_orc = (np.arange(rows)[:,None] < maprow_ocd[:,None,:,0]) | \
           (np.arange(rows)[:,None] > maprow_ocd[:,None,:,3])
     isskycont_orc = (((np.arange(rows)[:,None] < maprow_ocd[:,None,:,0]+rows/16) |  \
-          (np.arange(rows)[:,None] > maprow_ocd[:,None,:,3]-rows/16)) & ~isedge_orc)  
+          (np.arange(rows)[:,None] > maprow_ocd[:,None,:,3]-rows/16)) & ~isedge_orc)
+    if debug: pyfits.PrimaryHDU(isskycont_orc.astype('uint8')).writeto('isskycont_orc_'+tnum+'.fits',clobber=True)  
 
     for o in (0,1):
         bkgcont_rc = blksmooth2d(target_orc[o],isbkgcont_orc[o],rblk,cblk,0.25,mode="mean")
            
     # remove sky continuum: ends of bkg continuum * skyflat
-        skycont_c = (bkgcont_rc.T[isskycont_orc[o].T]/skyflat_orc[o].T[isskycont_orc[o].T])  \
-           .reshape((cols,-1)).mean(axis=1)
-        skycont_rc = skycont_c*skyflat_orc[o]
+        skycont_rc = np.zeros((rows,cols))
+        okflat_rc = ~np.isnan(skyflat_orc[o])
+        skycont_rc[okflat_rc] = (bkgcont_rc[okflat_rc]/skyflat_orc[o,okflat_rc])*isbkgcont_orc[o,okflat_rc] 
+        skycont_c = skycont_rc.sum(axis=0)
+        skycontrows_c = (skycont_rc>0.).sum(axis=0)
+        skycont_rc[:,skycont_c>0.] = skyflat_orc[o][:,skycont_c>0.]*skycont_c[skycont_c>0.]/skycontrows_c[skycont_c>0.]
         
     # remove sky lines: image - bkgcont run through 2d sky averaging
         objdata_rc = ((target_orc[o] - bkgcont_rc)/skyflat_orc)[o]
+        if debug: pyfits.PrimaryHDU(badbinbkg_orc[o].astype('uint8')).writeto('badbinbkg_orc_'+tnum+'_'+str(o)+'.fits',clobber=True)
         objdata_rc[badbinbkg_orc[o]] = np.nan
 
-#        pyfits.PrimaryHDU(objdata_rc.astype('float32')).writeto('objdata_'+tnum+'_'+str(o)+'.fits',clobber=True)
+        if debug: pyfits.PrimaryHDU(objdata_rc.astype('float32')).writeto('objdata_'+tnum+'_'+str(o)+'.fits',clobber=True)
 
         skylines_rc = make_2d_skyspectrum(objdata_rc,wav_orc[o],np.array([[0,rows],]))*skyflat_orc[o]
         target_orc[o] -= skycont_rc + skylines_rc
 
-#        pyfits.PrimaryHDU(skylines_rc.astype('float32')).writeto('skylines_rc_'+tnum+'_'+str(o)+'.fits',clobber=True)
-#        pyfits.PrimaryHDU(skycont_rc.astype('float32')).writeto('skycont_rc_'+tnum+'_'+str(o)+'.fits',clobber=True)
+        if debug: pyfits.PrimaryHDU(skylines_rc.astype('float32')).writeto('skylines_rc_'+tnum+'_'+str(o)+'.fits',clobber=True)
+        if debug: pyfits.PrimaryHDU(skycont_rc.astype('float32')).writeto('skycont_rc_'+tnum+'_'+str(o)+'.fits',clobber=True)
 
-    return target_orc,dtrbkg_dc
+    return target_orc
 
 # ---------------------------------------------------------------------------------
 def specpolextract(infilelist, logfile='salt.log', debug=False):
@@ -164,8 +163,9 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
             cbin,rbin = np.array(obs_dict["CCDSUM"][0].split(" ")).astype(int)
 
         # special version for lamp data
+            object = obs_dict["OBJECT"][0].strip().upper()
             lampid = obs_dict["LAMPID"][0].strip().upper()
-            if lampid!="NONE":
+            if ((object != "ARC") & (lampid != "NONE")) :
                 specpollampextract(outfilelist, logfile=logfile)           
                 continue
 
@@ -192,6 +192,7 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
 
             wav_orc = pyfits.open(outfilelist[0])['WAV'].data
             slitid = obs_dict["MASKID"][0]
+            okwav_oc = ~((wav_orc == 0).all(axis=1))
             if slitid[0] =="P": slitwidth = float(slitid[2:5])/10.
             else: slitwidth = float(slitid) 
 
@@ -205,15 +206,17 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
             hdusum.append(pyfits.ImageHDU(data=badbinall_orc.astype('uint8'), header=header, name='BPM'))
             hdusum.append(pyfits.ImageHDU(data=wav_orc, header=header, name='WAV'))
 
+            if debug: hdusum.writeto(obsname+".fits",clobber=True)
+
             psf_orc,skyflat_orc,badbinnew_orc,isbkgcont_orc,maprow_od,drow_oc = \
                 specpolsignalmap(hdusum,logfile=logfile,debug=debug)
- 
+
             maprow_ocd = maprow_od[:,None,:] + np.zeros((2,cols,4)) 
-            maprow_ocd -= drow_oc[:,:,None]      
+            maprow_ocd[okwav_oc] += drow_oc[okwav_oc,None]      
 
             isedge_orc = (np.arange(rows)[:,None] < maprow_ocd[:,None,:,0]) | \
                 (np.arange(rows)[:,None] > maprow_ocd[:,None,:,3])
-            istarget_orc = (np.arange(rows)[:,None] > maprow_ocd[:,None,:,1]) & \
+            istarget_orc = okwav_oc[:,None,:] & (np.arange(rows)[:,None] > maprow_ocd[:,None,:,1]) & \
                 (np.arange(rows)[:,None] < maprow_ocd[:,None,:,2])
                                    
             isbkgcont_orc &= (~badbinall_orc & ~isedge_orc & ~istarget_orc)
@@ -222,35 +225,45 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
             hdusum['BPM'].data = badbinnew_orc.astype('uint8')
 
             if debug: 
-                hdusum.writeto(obsname+".fits",clobber=True)
-#               pyfits.PrimaryHDU(var_orc.astype('float32')).writeto('var_orc.fits',clobber=True) 
+#                hdusum.writeto(obsname+".fits",clobber=True)
+               pyfits.PrimaryHDU(psf_orc.astype('float32')).writeto(obsname+'_psf_orc.fits',clobber=True) 
 #               pyfits.PrimaryHDU(badbinnew_orc.astype('uint8')).writeto('badbinnew_orc.fits',clobber=True)   
 #               pyfits.PrimaryHDU(badbinall_orc.astype('uint8')).writeto('badbinall_orc.fits',clobber=True)  
 #               pyfits.PrimaryHDU(badbinone_orc.astype('uint8')).writeto('badbinone_orc.fits',clobber=True)  
 
-        # scrunch and normalize psf from summed images (using badbinone) for optimized extraction
-        # psf is normalized so its integral over row is 1.
-            psfnormmin = 0.70    # wavelengths with less than this flux in good bins are marked bad
+        # set up wavelength binning
             wbin = wav_orc[0,rows/2,cols/2]-wav_orc[0,rows/2,cols/2-1] 
-            wbin = float(int(wbin/0.75))
-            wmin,wmax = wav_orc.min(axis=2).max(),wav_orc.max(axis=2).min()
+            wbin = 2.**(np.rint(np.log2(wbin)))         # bin to nearest power of 2 angstroms
+            wmin = (wav_orc.max(axis=1)[okwav_oc].reshape((2,-1))).min(axis=1).max()
+            wmax = wav_orc.max()
+            for o in (0,1): 
+                colmax = np.where((wav_orc[o] > 0.).any(axis=0))[0][-1]
+                row_r = np.where(wav_orc[o,:,colmax] > 0.)[0]
+                wmax = min(wmax,wav_orc[o,row_r,colmax].min())
             wedgemin = wbin*int(wmin/wbin+0.5) + wbin/2.
             wedgemax = wbin*int(wmax/wbin-0.5) + wbin/2.
             wedge_w = np.arange(wedgemin,wedgemax+wbin,wbin)
             wavs = wedge_w.shape[0] - 1
             binedge_orw = np.zeros((2,rows,wavs+1))
+            specrow_or = (maprow_od[:,1:3].mean(axis=1)[:,None] + np.arange(-rows/4,rows/4)).astype(int)
+
+        # scrunch and normalize psf from summed images (using badbinone) for optimized extraction
+        # psf is normalized so its integral over row is 1.
+            psfnormmin = 0.70    # wavelengths with less than this flux in good bins are marked bad
             psf_orw = np.zeros((2,rows,wavs))
-            specrow_or = maprow_od[:,1:3].mean(axis=1)[:,None] + np.arange(-rows/4,rows/4)
 
             for o in (0,1):
                 for r in specrow_or[o]:
-                    binedge_orw[o,r] = interp1d(wav_orc[o,r],np.arange(cols))(wedge_w)
+                    binedge_orw[o,r] = \
+                        interp1d(wav_orc[o,r,okwav_oc[o]],np.arange(cols)[okwav_oc[o]], \
+                                   kind='linear',bounds_error=False)(wedge_w)
                     psf_orw[o,r] = scrunch1d(psf_orc[o,r],binedge_orw[o,r])
-            psf_orw /= psf_orw.sum(axis=1)[:,None,:]
 
-#            if debug: 
-#               pyfits.PrimaryHDU(psf_orw.astype('float32')).writeto(obsname+'_psf_orw.fits',clobber=True)
-#               pyfits.PrimaryHDU(var_orw.astype('float32')).writeto(obsname+'_var_orw.fits',clobber=True) 
+            if debug: 
+                pyfits.PrimaryHDU(binedge_orw.astype('float32')).writeto(obsname+'_binedge_orw.fits',clobber=True)
+                pyfits.PrimaryHDU(psf_orw.astype('float32')).writeto(obsname+'_psf_orw.fits',clobber=True)
+
+            psf_orw /= psf_orw.sum(axis=1)[:,None,:]
 
         # set up optional image-dependent column shift for slitless data
             colshiftfilename = "colshift.txt"
@@ -262,16 +275,19 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
                 log.message(' Bins    '+shifts*'%5.2f ' % tuple(dcol_I), with_header=False)                 
                
         # background-subtract and extract spectra
-            dtrbkg_dic = np.zeros((2,outfiles,cols))
             for i in range(outfiles):
                 hdulist = pyfits.open(outfilelist[i])
                 tnum = os.path.basename(outfilelist[i]).split('.')[0][-3:]
                 badbin_orc = (hdulist['BPM'].data > 0)
                 badbinbkg_orc = (badbin_orc | badbinnew_orc | isedge_orc | istarget_orc)
-                target_orc,dtrbkg_dic[:,i,:] = bkgsub(hdulist,badbinbkg_orc,isbkgcont_orc,skyflat_orc,maprow_ocd,tnum)
-#                pyfits.PrimaryHDU(target_orc.astype('float32')).writeto('target_'+tnum+'_orc.fits',clobber=True)
+                if debug:
+                    pyfits.PrimaryHDU(isedge_orc.astype('uint8')).writeto('isedge_orc_'+tnum+'.fits',clobber=True)
+                    pyfits.PrimaryHDU(istarget_orc.astype('uint8')).writeto('istarget_orc_'+tnum+'.fits',clobber=True) 
+                    pyfits.PrimaryHDU(badbinbkg_orc.astype('uint8')).writeto('badbinbkg_orc_'+tnum+'.fits',clobber=True)
+                target_orc = bkgsub(hdulist,badbinbkg_orc,isbkgcont_orc,skyflat_orc,maprow_ocd,tnum,debug=debug)
                 target_orc *= (~badbin_orc).astype(int)             
-#                pyfits.PrimaryHDU(target_orc.astype('float32')).writeto('target_'+tnum+'_orc.fits',clobber=True)
+                if debug:
+                    pyfits.PrimaryHDU(target_orc.astype('float32')).writeto('target_'+tnum+'_orc.fits',clobber=True)
                 var_orc = hdulist['var'].data
                 badbin_orc = (hdulist['bpm'].data > 0) | badbinnew_orc
             # extract spectrum optimally (Horne, PASP 1986)
@@ -324,9 +340,9 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
                 psfbadfrac_ow = (psfsh_orw*badbin_orw.astype(int)).sum(axis=1)/psfsh_orw.sum(axis=1)
                 badbin_ow |= (psfbadfrac_ow > badlim)
 
-#                cdebug = 39
-#                if debug: np.savetxt("xtrct"+str(cdebug)+"_"+tnum+".txt",np.vstack((psf_orw[:,:,cdebug],var_orw[:,:,cdebug], \
-#                 wt_orw[:,:,cdebug],target_orw[:,:,cdebug])).reshape((4,2,-1)).transpose(1,0,2).reshape((8,-1)).T,fmt="%12.5e")
+                cdebug = 83
+                if debug: np.savetxt("xtrct"+str(cdebug)+"_"+tnum+".txt",np.vstack((psf_orw[:,:,cdebug],var_orw[:,:,cdebug], \
+                    wt_orw[:,:,cdebug],target_orw[:,:,cdebug])).reshape((4,2,-1)).transpose(1,0,2).reshape((8,-1)).T,fmt="%12.5e")
 
             # write O,E spectrum, prefix "s". VAR, BPM for each spectrum. y dim is virtual (length 1)
             # for consistency with other modes
@@ -347,6 +363,5 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
             
                 hduout.writeto('e'+outfilelist[i],clobber=True,output_verify='warn')
                 log.message('Output file '+'e'+outfilelist[i] , with_header=False)
-            if debug: np.savetxt(obsname+"_dtrbkg_dic.txt",dtrbkg_dic.reshape((-1,cols)).T,fmt="%8.2f")
     return
 
