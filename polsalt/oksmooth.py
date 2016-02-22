@@ -40,10 +40,12 @@ def blksmooth2d(ar_rc,ok_rc,rblk,cblk,blklim,mode="mean",debug=False):
 # blkaverage (using mask, with blks with > blklim fraction of the pts), then spline interpolate result
 # optional: median instead of mean
 
-    arr_rc = ar_rc*ok_rc
     rows,cols = ar_rc.shape
+    arr_rc = np.zeros_like(ar_rc)
+    arr_rc[ok_rc] = ar_rc[ok_rc]
     r_rc,c_rc = np.indices((rows,cols)).astype(float)
     rblks,cblks = int(rows/rblk),int(cols/cblk)
+
 # equalize block scaling to avoid triangularization failure    
     rfac,cfac = max(rblk,cblk)/rblk, max(rblk,cblk)/cblk     
     r0,c0 = (rows % rblk)/2,(cols % cblk)/2
@@ -68,6 +70,10 @@ def blksmooth2d(ar_rc,ok_rc,rblk,cblk,blklim,mode="mean",debug=False):
     r_RC[ok_RC] = r_RCb[ok_RC].sum(axis=-1)/ok_RCb[ok_RC].sum(axis=-1)
     c_RC[ok_RC] = c_RCb[ok_RC].sum(axis=-1)/ok_RCb[ok_RC].sum(axis=-1)
 
+    if debug:
+        np.savetxt('arr_RC.txt',arr_RC,fmt="%14.9f")
+        np.savetxt('ok_RC.txt',ok_RC,fmt="%2i")
+
 # evaluate slopes at edge for edge extrapolation   
     dar_RC = arr_RC[1:,:] - arr_RC[:-1,:]
     dac_RC = arr_RC[:,1:] - arr_RC[:,:-1]
@@ -85,7 +91,6 @@ def blksmooth2d(ar_rc,ok_rc,rblk,cblk,blklim,mode="mean",debug=False):
     dadc_RC[argR,argC[-1]-1] *= (arr_RC[argR,argC[-1]] > 0)    
 
     if debug:
-        np.savetxt('arr_RC.txt',arr_RC,fmt="%14.9f")
         np.savetxt('dadr_RC.txt',dadr_RC,fmt="%14.9f")
         np.savetxt('dadc_RC.txt',dadc_RC,fmt="%14.9f")
         np.savetxt('r_RC_0.txt',r_RC,fmt="%9.2f")
@@ -95,10 +100,6 @@ def blksmooth2d(ar_rc,ok_rc,rblk,cblk,blklim,mode="mean",debug=False):
 
     r_RC[argR[[0,-1]][:,None],argC] = rfac*(r0+(rblk-1)/2.+rblk*argR[[0,-1]])[:,None]
     c_RC[argR[:,None],argC[[0,-1]]] = cfac*(c0+(cblk-1)/2.+cblk*argC[[0,-1]])
-
-    if debug:
-        np.savetxt('r_RC_1.txt',r_RC,fmt="%9.2f")
-        np.savetxt('c_RC_1.txt',c_RC,fmt="%9.2f")
         
     arr_rc = griddata((r_RC[ok_RC],c_RC[ok_RC]),arr_RC[ok_RC],  \
         tuple(np.mgrid[:rfac*rows:rfac,:cfac*cols:cfac].astype(float)),method='cubic',fill_value=0.)
