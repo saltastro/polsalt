@@ -171,8 +171,10 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',logfile='s
                     shift(arc_orc[o,:,c],-drow_oc[o,c],arc_yc[:,c])
 
                 maxoverlaprows = 34/rbin                        # beam overlap for 4' longslit in NIR
-                arc_yc[(0,rows/2-1)] = 0.
                 arc_y = arc_yc.sum(axis=1)
+                arc_y[[0,-1]] = 0.
+                if debug: np.savetxt(str(imageno_i[iarc])+"_"+str(o)+"_arc_y.txt",arc_y.T,fmt="%8.4f")
+
                 edgerow_od[o,0] = axisrow_o[o] - np.argmax(arc_y[axisrow_o[o]::-1] <  0.5*arc_y[axisrow_o[o]])
                 edgerow_od[o,1] = axisrow_o[o] + np.argmax(arc_y[axisrow_o[o]:] <  0.5*arc_y[axisrow_o[o]])
                 axisrow_o[o] = edgerow_od[o].mean()
@@ -219,6 +221,10 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',logfile='s
                 mediancof_l = np.median(legcof_lY,axis=1)
                 rms_l = np.sqrt(np.median((legcof_lY - mediancof_l[:,None])**2,axis=1))
                 sigma_lY = np.abs((legcof_lY - mediancof_l[:,None]))/rms_l[:,None]
+
+                if debug: np.savetxt(str(imageno_i[iarc])+"_"+str(o)+"_legcofs.txt",    \
+                        np.vstack((legy_Y,legcof_lY,sigma_lY)).T,fmt="%12.5e")
+
                 argYbad = np.where((sigma_lY>4).any(axis=0))[0]
                 legy_Y = np.delete(legy_Y, argYbad,axis=0)
                 legcof_lY = np.delete(legcof_lY, argYbad,axis=1)
@@ -227,6 +233,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',logfile='s
 
                 if cofrows_o[o] < 5:
             # for future: if few lines in db, use model shifted to agree, for now just use mean
+                    log.message('WARNING, INSUFFICIENT DATABASE ROWS, USE MEAN' , with_header=False)                    
                     legcof_l = legcof_lY.mean(axis=1)
                     wavmap_yc = np.polynomial.legendre.legval(np.arange(cols),legcof_l)
                 else:
