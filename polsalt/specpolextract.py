@@ -306,8 +306,9 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
                         badbin_orw[o,r] = scrunch1d(badbin_orc[o,r].astype(float),binedge_orw[o,r]+dcol) > 0.001 
                 badbin_orw |= (var_orw == 0)
                 badbin_orw |= ((psf_orw*(~badbin_orw)).sum(axis=1)[:,None,:] < psfnormmin)
-#                pyfits.PrimaryHDU(var_orw.astype('float32')).writeto('var_'+tnum+'_orw.fits',clobber=True)
-#                pyfits.PrimaryHDU(badbin_orw.astype('uint8')).writeto('badbin_'+tnum+'_orw.fits',clobber=True)
+                if debug:
+#                   pyfits.PrimaryHDU(var_orw.astype('float32')).writeto('var_'+tnum+'_orw.fits',clobber=True)
+                    pyfits.PrimaryHDU(badbin_orw.astype('uint8')).writeto('badbin_'+tnum+'_orw.fits',clobber=True)
   
             # use master psf shifted in row to allow for guide errors
                 pwidth = 2*int(1./psf_orw.max())

@@ -633,6 +633,7 @@ def specpolsignalmap(hdu,logfile=sys.stdout,debug=False):
             targetrow_od[o,0] = trow_o[o] - np.argmax(isbkgcont_orc[o,trow_o[o]::-1,cols/2] > 0)
             targetrow_od[o,1] = trow_o[o] + np.argmax(isbkgcont_orc[o,trow_o[o]:,cols/2] > 0)
 
+        psf_orc *= (~badbinnew_orc).astype(int)
         maprow_od = np.vstack((edgerow_od[:,0],targetrow_od[:,0],targetrow_od[:,1],edgerow_od[:,1])).T
         maprow_od += np.array([-2,-2,2,2])
 
