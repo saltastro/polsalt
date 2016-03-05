@@ -148,7 +148,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',logfile='s
         # for O,E arc straighten spectrum, find fov, identify for each, form (unstraightened) wavelength map   
             lamp=obs_dict['LAMPID'][iarc].strip().replace(' ', '')
             if lamp == 'NONE': lamp='CuAr'
-            hduarc[0].header.update('MASKTYP','LONGSLIT')
+            #hduarc[0].header.update('MASKTYP','LONGSLIT')
             del hduarc['VAR']
             del hduarc['BPM']
             lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])    
