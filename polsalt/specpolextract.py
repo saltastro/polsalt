@@ -17,7 +17,7 @@ import reddir
 datadir = os.path.dirname(inspect.getfile(reddir))+"/data/"
 
 from oksmooth import blksmooth2d
-from specpolwavmap import configmap
+from specpolutils import configmap
 from specpollampextract import specpollampextract
 from specpolsignalmap import specpolsignalmap
 from skysub2d_khn import make_2d_skyspectrum
