@@ -1,34 +1,9 @@
 
-"""
-specpolsplit
-
-Split O and E beams
-
-"""
-
-import os, sys, glob, shutil, inspect
-
 import numpy as np
-import pyfits
 from scipy.interpolate import interp1d
-from scipy.ndimage.interpolation import shift
-from scipy import linalg as la
-
-from pyraf import iraf
-from iraf import pysalt
-
-from saltobslog import obslog
-
-from specidentify import specidentify
-from saltsafelog import logging
-
-import reddir
 from specpolutils import rssmodelwave
+from specpolwollaston import read_wollaston
 
-np.set_printoptions(threshold=np.nan)
-debug = True
-
-#----------------------------------------------------------------------
 def specpolsplit(hdu, splitrow=None, wollaston_file=None):
     """ Split the O and E beams  
 
@@ -61,21 +36,10 @@ def specpolsplit(hdu, splitrow=None, wollaston_file=None):
         # use arc to make first-guess wavecal from model
         # locate beamsplitter split point based on the center of the chips 
         # given in the wollaston file
-
-        #set up data
-        data= hdu['SCI'].data
-        grating = hdu[0].header['GRATING']
-        grang = hdu[0].header['GR-ANGLE']
-        artic = hdu[0].header['CAMANG']
         cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")]
-
-
-        #load data from wollaston file
-        lam_m = np.loadtxt(wollaston_file,dtype=float,usecols=(0,))
-        rpix_om = np.loadtxt(wollaston_file,dtype=float,unpack=True,usecols=(1,2))
-        lam_c = rssmodelwave(grating,grang,artic,cbin,cols)
-        axisrow_o = ((2052 + interp1d(lam_m,rpix_om,kind='cubic',bounds_error=False) \
-                     (lam_c[cols/2]))/rbin).astype(int)
+        woll_pix = read_wollaston(hdu, wollaston_file)
+        print woll_pix[:, cols/2]
+        axisrow_o = ((2052 + woll_pix[:,cols/2])/rbin).astype(int)
 
         data_y = hdu[1].data.sum(axis=1)
         top = axisrow_o[1] + np.argmax(data_y[axisrow_o[1]:] <  0.5*data_y[axisrow_o[1]])

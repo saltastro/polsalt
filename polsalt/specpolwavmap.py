@@ -24,12 +24,12 @@ from specwavemap import wavemap
 from specidentify import specidentify
 from saltsafelog import logging
 
-import reddir
 from specpolutils import *
 from specpolsplit import specpolsplit 
+from specpolwollaston import correct_wollaston
 
 datadir = os.path.dirname(__file__) + '/data/'
-np.set_printoptions(threshold=np.nan)
+#np.set_printoptions(threshold=np.nan)
 debug = False
 
 def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines', 
@@ -106,9 +106,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             for o in (0,1):
  
                 #correct the shape of the arc for the distortions
-                arc_yc = np.zeros((rows/2,cols),dtype='float32')
-                for c in range(cols): 
-                    shift(arc_orc[o,:,c],-drow_oc[o,c],arc_yc[:,c])
+                arc_yc = correct_wollaston(arc_orc[o], -drow_oc[o])
 
                 # this is used to remove rows outside the slit
                 maxoverlaprows = 34/rbin                        # beam overlap for 4' longslit in NIR
@@ -151,8 +149,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
                   
                 # put curvature back in, zero out areas beyond slit and wavelength range (will be flagged in bpm)
                 if debug: np.savetxt("drow_wmap_oc.txt",drow_oc.T,fmt="%8.3f %8.3f")
-                for c in range(cols): 
-                    shift(wavmap_yc[:,c],drow_oc[o,c],wavmap_orc[o,:,c],order=1)
+                wavmap_orc[o] = correct_wollaston(wavmap_yc,drow_oc[o])
 
                 isoffslit_rc = ((np.arange(rows/2)[:,None] < (edgerow_od[o,0]+(rpix_oc[o]-rpix_oc[o,cols/2])/rbin)[None,:]) \
                            | (np.arange(rows/2)[:,None] > (edgerow_od[o,1]+(rpix_oc[o]-rpix_oc[o,cols/2])/rbin)[None,:]))

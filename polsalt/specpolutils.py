@@ -3,7 +3,6 @@ import numpy as np
 
 from saltobslog import obslog
 
-
 DATADIR = os.path.dirname(__file__) + '/data/'
 
 def rssmodelwave(grating,grang,artic,cbin,cols):
