@@ -28,10 +28,11 @@ from iraf import pysalt
 from saltsafelog import logging
 from saltobslog import obslog
 from saltprepare import *
-from saltbias import saltbias
-from saltgain import saltgain
-from saltxtalk import saltxtalk
-from saltcrclean import saltcrclean
+from saltbias import bias
+from saltgain import gain
+from saltxtalk import xtalk
+from saltcrclean import multicrclean
+
 from saltcombine import saltcombine
 from saltflat import saltflat
 from saltmosaic import saltmosaic
@@ -58,50 +59,67 @@ def imred(infile_list, prodir, bpmfile=None, gaindb = None, cleanup=True):
     #create the observation log
     obs_dict=obslog(infile_list)
 
+    verbose=True
+
     with logging(logfile, debug) as log:
         log.message('Pysalt Version: '+pysalt.verno, with_header=False)
  
     #prepare the data
-    saltprepare(infiles, '', 'p', createvar=False, badpixelimage='', clobber=True, logfile=logfile, verbose=True)
 
-    for img in infile_list:
-        hdu = pyfits.open('p'+os.path.basename(img), 'update')
-        # for backwards compatibility  
-        if not 'XTALK' in hdu[1].header:
-            hdu[1].header.update('XTALK',1474)
-            hdu[2].header.update('XTALK',1474)
-            hdu[3].header.update('XTALK',1166)
-            hdu[4].header.update('XTALK',1111)
-            hdu[5].header.update('XTALK',1377)
-            hdu[6].header.update('XTALK',1377)
-        hdu.close()
+        for img in infile_list:
+            hdu = pyfits.open(img)
+            img = os.path.basename(img)
         
-    #bias subtract the data
-    saltbias('pP*fits', '', 'b', subover=True, trim=True, subbias=False, masterbias='',  
-              median=False, function='polynomial', order=5, rej_lo=3.0, rej_hi=5.0, 
-              niter=10, plotover=False, turbo=False, 
-              clobber=True, logfile=logfile, verbose=True)
+            hdu = prepare(hdu, createvar=False, badpixelstruct=None)
+            if not cleanup: hdu.writeto('p'+img, clobber=True)
 
-    add_variance('bpP*fits', bpmfile)
+            hdu = bias(hdu,subover=True, trim=True, subbias=False,
+                       bstruct=None, median=False, function='polynomial',
+                       order=5, rej_lo=5.0, rej_hi=5.0, niter=10,
+                       plotover=False, log=log, verbose=verbose)    
+            if not cleanup: hdu.writeto('bp'+img, clobber=True)
 
-    #gain correct the data 
-    usedb = False
-    if gaindb: usedb = True
-    saltgain('bpP*fits', '', 'g', gaindb=gaindb, usedb=usedb, mult=True, clobber=True, logfile=logfile, verbose=True)
+            # for backwards compatibility  
+            if not 'XTALK' in hdu[1].header:
+                hdu[1].header['XTALK']=1474
+                hdu[2].header['XTALK']=1474
+                hdu[3].header['XTALK']=1166
+                hdu[4].header['XTALK']=1111
+                hdu[5].header['XTALK']=1377
+                hdu[6].header['XTALK']=1377
+     
+            badpixelstruct = saltio.openfits(bpmfile)
+            hdu = add_variance(hdu, badpixelstruct)
+             
+            #gain correct the data 
+            if gaindb: 
+                usedb = True
+                dblist = saltio.readgaindb(gaindb.strip())
+            else:
+                usedb = False
+                dblist = ''
+            hdu = gain(hdu, mult=True, usedb=usedb, dblist=dblist, log=log, verbose=verbose)
+            if not cleanup: hdu.writeto('gbp'+img, clobber=True)
 
-    #cross talk correct the data
-    saltxtalk('gbpP*fits', '', 'x', xtalkfile = "", usedb=False, clobber=True, logfile=logfile, verbose=True)
+            #cross talk correct the data
+            hdu=xtalk(hdu, [], log=log, verbose=verbose)
 
-    #cosmic ray clean the data
-    #only clean the object data
-    for i in range(len(infile_list)):
-        if (obs_dict['CCDTYPE'][i].count('OBJECT') \
-            and obs_dict['LAMPID'][i].count('NONE') \
-            and obs_dict['INSTRUME'][i].count('RSS')):
-          img='xgbp'+os.path.basename(infile_list[i])
-          saltcrclean(img, img, '', crtype='edge', thresh=5, mbox=11, bthresh=5.0,
-                flux_ratio=0.2, bbox=25, gain=1.0, rdnoise=5.0, fthresh=5.0, bfactor=2,
-                gbox=3, maxiter=5, multithread=True,  clobber=True, logfile=logfile, verbose=True)
+            #cosmic ray clean the data
+            #only clean the object data
+            thresh = 5.0
+            if hdu[0].header['GRATING'].strip()=='PG0300': thresh = 7.0
+
+            if hdu[0].header['CCDTYPE']=='OBJECT' and \
+               hdu[0].header['LAMPID']=='NONE' and \
+               hdu[0].header['INSTRUME']=='RSS':
+               log.message('Cleaning CR using thresh={}'.format(thresh))
+               hdu = multicrclean(hdu, crtype='edge', thresh=thresh, mbox=11, bthresh=5.0,
+                  flux_ratio=0.2, bbox=25, gain=1.0, rdnoise=5.0, fthresh=5.0, bfactor=2,
+                  gbox=3, maxiter=5, log=log, verbose=verbose)
+
+            hdu.writeto('xgbp'+img, clobber=True)
+            hdu.close()
+        
 
     #mosaic the data
     #khn: attempt to use most recent previous geometry to obsdate.  
@@ -142,27 +160,33 @@ def imred(infile_list, prodir, bpmfile=None, gaindb = None, cleanup=True):
            for f in glob.glob('gbp*fits'): os.remove(f)
            for f in glob.glob('xgbp*fits'): os.remove(f)
 
-def add_variance(filenames, bpmfile):
+def add_variance_files(filenames, bpmfile):
     file_list=glob.glob(filenames)
     badpixelstruct = saltio.openfits(bpmfile)
     for f in file_list:
         struct = pyfits.open(f)
-        nsciext=len(struct)-1
-        nextend=nsciext
-        for i in range(1, nsciext+1):
-            hdu=CreateVariance(struct[i], i, nextend+i)
-            hdu.header.update('EXTNAME','VAR')
-            struct[i].header.update('VAREXT',nextend+i, comment='Extension for Variance Frame')
-            struct.append(hdu)
-        nextend+=nsciext
-        for i in range(1, nsciext+1):
-            hdu=masterbadpixel(struct, badpixelstruct, i, nextend+i)
-            struct[i].header.update('BPMEXT',nextend+i, comment='Extension for Bad Pixel Mask')
-            struct.append(hdu)
-        nextend+=nsciext
-        struct[0].header.update('NEXTEND', nextend)
+        struct = add_variance(struct, bpmstruct)
         if os.path.isfile(f): os.remove(f)
         struct.writeto(f)
+
+def add_variance(struct, badpixelstruct):
+    """Add variance and badpixel frame"""
+    nsciext=len(struct)-1
+    nextend=nsciext
+    for i in range(1, nsciext+1):
+        hdu=CreateVariance(struct[i], i, nextend+i)
+        hdu.header.update('EXTNAME','VAR')
+        struct[i].header.update('VAREXT',nextend+i, comment='Extension for Variance Frame')
+        struct.append(hdu)
+    nextend+=nsciext
+    for i in range(1, nsciext+1):
+        hdu=masterbadpixel(struct, badpixelstruct, i, nextend+i)
+        struct[i].header.update('BPMEXT',nextend+i, comment='Extension for Bad Pixel Mask')
+        struct.append(hdu)
+    nextend+=nsciext
+    struct[0].header.update('NEXTEND', nextend)
+    return struct 
+
 
 def masterbadpixel(inhdu, bphdu, sci_ext, bp_ext):
 #   khn: Create the bad pixel hdu bp_ext for inhdu[sci_ext] from a master, bphdu
