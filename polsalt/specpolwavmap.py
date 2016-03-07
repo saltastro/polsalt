@@ -79,7 +79,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])    
 
             # some houskeeping for bad keywords
-            hduarc[0].header.update('MASKTYP','LONGSLIT')
+            #hduarc[0].header.update('MASKTYP','LONGSLIT')
             del hduarc['VAR']
             del hduarc['BPM']
 
