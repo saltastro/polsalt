@@ -107,8 +107,6 @@ def list_configurations(infilelist, log):
                 exit()
     iarc_i = -np.zeros((infiles),dtype=int)
 
-    iarc = {}
-
     for w in range(wavblks):
             blkimages =  imageno_i[wavblk_i==w]
             if blkimages.shape[0]==0: continue

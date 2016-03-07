@@ -26,7 +26,7 @@ from saltsafelog import logging
 
 from specpolutils import *
 from specpolsplit import specpolsplit 
-from specpolwollaston import correct_wollaston
+from specpolwollaston import correct_wollaston, read_wollaston
 
 datadir = os.path.dirname(__file__) + '/data/'
 #np.set_printoptions(threshold=np.nan)
@@ -44,8 +44,6 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
       
         iarc_a, iarc_i  = list_configurations(infilelist, log)
         arcs = iarc_a.shape[0]
-        lam_m = np.loadtxt(datadir+"wollaston.txt",dtype=float,usecols=(0,))
-        rpix_om = np.loadtxt(datadir+"wollaston.txt",dtype=float,unpack=True,usecols=(1,2))
 
         for a in range(arcs):
             
@@ -59,10 +57,11 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             artic = hduarc[0].header['CAMANG']
             cbin, rbin = [int(x) for x in hduarc[0].header['CCDSUM'].split(" ")]
 
+            # need this for the distortion correction 
+            rpix_oc = read_wollaston(hduarc, wollaston_file=datadir+"wollaston.txt")
+
             #split the arc into the two beams
             hduarc, splitrow = specpolsplit(hduarc, splitrow=None, wollaston_file=datadir+"wollaston.txt")
-            arc_orc =  hduarc[1].data
-            offset = int(splitrow - rows/2)
             
             # set up the linelamp to be used
             if len(linelistlib) ==0: 
@@ -82,86 +81,19 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             #hduarc[0].header.update('MASKTYP','LONGSLIT')
             del hduarc['VAR']
             del hduarc['BPM']
-
-            # for O,E arc straighten spectrum, find fov, identify for each, form (unstraightened) wavelength map   
-            # this corrects for the aberration introduced by the beam splitter
-            # this will be removed back out when creating the wave map
-            axisrow_o = np.array([rows/4.0, rows/4.0]).astype(int)
-            lam_c = rssmodelwave(grating,grang,artic,cbin,cols)
-            rpix_oc = interp1d(lam_m, rpix_om,kind ='cubic',bounds_error=False,fill_value=0.)(lam_c)
-            drow_oc = (rpix_oc-rpix_oc[:,cols/2][:,None])/rbin
-
+    
             # log the information about the arc
             log.message('\nARC: image '+str(image_no)+' GRATING '+grating\
-                +' GRANG '+("%8.3f" % grang)+' ARTIC '+("%8.3f" % artic)+' LAMP '+lamp, with_header=False)
+                        +' GRANG '+("%8.3f" % grang)+' ARTIC '+("%8.3f" % artic)+' LAMP '+lamp, with_header=False)
             log.message('  Split Row: '+("%4i " % splitrow), with_header=False)
 
-            #set up some output arrays
-            wavmap_orc = np.zeros((2,rows/2,cols))
-            edgerow_od = np.zeros((2,2))
-            cofrows_o = np.zeros(2)
-            legy_od = np.zeros((2,2))
-            guessfile=None
+            # set up the correction for the beam splitter
+            drow_oc = (rpix_oc-rpix_oc[:,cols/2][:,None])/rbin
 
-            for o in (0,1):
- 
-                #correct the shape of the arc for the distortions
-                arc_yc = correct_wollaston(arc_orc[o], -drow_oc[o])
+            wavmap_orc = pol_wave_map(hduarc, image_no, drow_oc, rows, cols,
+                                      function=function, order=order,
+                                      log=log)
 
-                # this is used to remove rows outside the slit
-                maxoverlaprows = 34/rbin                        # beam overlap for 4' longslit in NIR
-                arc_y = arc_yc.sum(axis=1)
-                arc_y[[0,-1]] = 0.
-
-                edgerow_od[o,0] = axisrow_o[o] - np.argmax(arc_y[axisrow_o[o]::-1] <  0.5*arc_y[axisrow_o[o]])
-                edgerow_od[o,1] = axisrow_o[o] + np.argmax(arc_y[axisrow_o[o]:] <  0.5*arc_y[axisrow_o[o]])
-                axisrow_o[o] = edgerow_od[o].mean()
-                if np.abs(edgerow_od[o] - np.array([0,rows/2-1])).min() < maxoverlaprows:
-                    edgerow_od[o] += maxoverlaprows*np.array([+1,-1])
-
-                #wrtite out temporary image to run specidentify
-                hduarc['SCI'].data = arc_yc
-                arcimage = "arc_"+str(image_no)+"_"+str(o)+".fits"
-                dbfilename = "arcdb_"+str(image_no)+"_"+str(o)+".txt"
-
-                if (not os.path.exists(dbfilename)):
-                    if guessfile is not None:
-                        guesstype = 'file'
-                    else:
-                        guessfile=dbfilename
-                        guesstype = 'rss'
-                    hduarc.writeto(arcimage,clobber=True)
-                    ystart = axisrow_o[o]
-                 
-                    specidentify(arcimage, lampfile, dbfilename, guesstype=guesstype,
-                        guessfile=guessfile, automethod=automethod,  function=function,  order=order,
-                        rstep=20, rstart=ystart, mdiff=20, thresh=3, niter=5, smooth=3,
-                        inter=True, clobber=True, logfile=logfile, verbose=True)
-                    if (not debug): os.remove(arcimage)
-
-                
-                wavmap_yc, cofrows_o[o], legy_od[o] = wave_map(dbfilename, edgerow_od[o], rows, cols, order)
-                #TODO: Once rest is working, try to switch to pysalt wavemap
-                #soldict = sr.entersolution(dbfilename)
-                #wavmap_yc = wavemap(hduarc, soldict, caltype='line', function=function, 
-                #          order=order,blank=0, nearest=True, array_only=True,
-                #          clobber=True, log=log, verbose=True)
-                  
-                # put curvature back in, zero out areas beyond slit and wavelength range (will be flagged in bpm)
-                if debug: np.savetxt("drow_wmap_oc.txt",drow_oc.T,fmt="%8.3f %8.3f")
-                wavmap_orc[o] = correct_wollaston(wavmap_yc,drow_oc[o])
-
-                isoffslit_rc = ((np.arange(rows/2)[:,None] < (edgerow_od[o,0]+(rpix_oc[o]-rpix_oc[o,cols/2])/rbin)[None,:]) \
-                           | (np.arange(rows/2)[:,None] > (edgerow_od[o,1]+(rpix_oc[o]-rpix_oc[o,cols/2])/rbin)[None,:]))
-                notwav_rc = (rpix_oc[o]==0.)[None,:]
-                wavmap_orc[o,(isoffslit_rc | notwav_rc)] = 0.
-
-            log.message('\n  Wavl coeff rows:  O    %4i     E    %4i' % tuple(cofrows_o), with_header=False)
-            log.message('  Bottom, top row:  O %4i %4i   E %4i %4i' \
-                % tuple(legy_od.flatten()), with_header=False)
-            log.message('\n  Slit axis row:    O    %4i     E    %4i' % tuple(axisrow_o), with_header=False)
-            log.message('  Bottom, top row:  O %4i %4i   E %4i %4i \n' \
-                % tuple(edgerow_od.flatten()), with_header=False)
 
             # for images using this arc,save split data along third fits axis, 
             # add wavmap extension, save as 'w' file
@@ -176,6 +108,118 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
                 log.message('Output file '+'w'+infilelist[i] , with_header=False)
 
     return
+
+def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, function='legendre', order=3, log=None):
+    """ Create a wave_map for an arc image
+
+    For O,E arc straighten spectrum, find fov, identify for each, form (unstraightened) wavelength map   
+    this corrects for the aberration introduced by the beam splitter
+    this will be removed back out when creating the wave map
+ 
+    Parameters 
+    ----------
+    hduarc: fits.HDUList
+       Polarimetric arc data. This data should be split into O+E beams
+
+    image_no: int
+       File number of observations
+
+    rows: int
+       Nubmer of rows in original data
+
+    cols: int
+       Nubmer of columns in original data
+
+    function: str
+       Function used for wavelength fitting
+
+    order: int
+       Order of fitting function
+
+    log: log
+       Log for output
+
+    Returns
+    -------
+    wavmap: numpy.ndarray
+       Wave map of wavelengths correspond to pixels
+
+    """
+
+    arc_orc =  hduarc[1].data
+    cbin, rbin = [int(x) for x in hduarc[0].header['CCDSUM'].split(" ")]
+    axisrow_o = np.array([rows/4.0, rows/4.0]).astype(int)
+
+    #set up some output arrays
+    wavmap_orc = np.zeros((2,rows/2.0,cols))
+    edgerow_od = np.zeros((2,2))
+    cofrows_o = np.zeros(2)
+    legy_od = np.zeros((2,2))
+    guessfile=None
+
+    for o in (0,1):
+
+        #correct the shape of the arc for the distortions
+        arc_yc = correct_wollaston(arc_orc[o], -drow_oc[o])
+
+        # this is used to remove rows outside the slit
+        maxoverlaprows = 34/rbin                        # beam overlap for 4' longslit in NIR
+        arc_y = arc_yc.sum(axis=1)
+        arc_y[[0,-1]] = 0.
+
+        edgerow_od[o,0] = axisrow_o[o] - np.argmax(arc_y[axisrow_o[o]::-1] <  0.5*arc_y[axisrow_o[o]])
+        edgerow_od[o,1] = axisrow_o[o] + np.argmax(arc_y[axisrow_o[o]:] <  0.5*arc_y[axisrow_o[o]])
+        axisrow_o[o] = edgerow_od[o].mean()
+        if np.abs(edgerow_od[o] - np.array([0,rows/2-1])).min() < maxoverlaprows:
+            edgerow_od[o] += maxoverlaprows*np.array([+1,-1])
+
+        #wrtite out temporary image to run specidentify
+        hduarc['SCI'].data = arc_yc
+        arcimage = "arc_"+str(image_no)+"_"+str(o)+".fits"
+        dbfilename = "arcdb_"+str(image_no)+"_"+str(o)+".txt"
+
+        if (not os.path.exists(dbfilename)):
+            if guessfile is not None:
+                guesstype = 'file'
+            else:
+                guessfile=dbfilename
+                guesstype = 'rss'
+            hduarc.writeto(arcimage,clobber=True)
+            ystart = axisrow_o[o]
+                 
+            specidentify(arcimage, lampfile, dbfilename, guesstype=guesstype,
+                guessfile=guessfile, automethod=automethod,  function=function,  order=order,
+                rstep=20, rstart=ystart, mdiff=20, thresh=3, niter=5, smooth=3,
+                inter=True, clobber=True, logfile=logfile, verbose=True)
+            if (not debug): os.remove(arcimage)
+
+                
+        wavmap_yc, cofrows_o[o], legy_od[o] = wave_map(dbfilename, edgerow_od[o], rows, cols, order)
+        #TODO: Once rest is working, try to switch to pysalt wavemap
+        #soldict = sr.entersolution(dbfilename)
+        #wavmap_yc = wavemap(hduarc, soldict, caltype='line', function=function, 
+        #          order=order,blank=0, nearest=True, array_only=True,
+        #          clobber=True, log=log, verbose=True)
+                  
+        # put curvature back in, zero out areas beyond slit and wavelength range (will be flagged in bpm)
+        if debug: np.savetxt("drow_wmap_oc.txt",drow_oc.T,fmt="%8.3f %8.3f")
+        wavmap_orc[o] = correct_wollaston(wavmap_yc,drow_oc[o])
+
+        y, x = np.indices(wavmap_orc[o].shape)
+        mask = (y < edgerow_od[o,0] + drow_oc[o]) | (y > edgerow_od[o,1] + drow_oc[o])
+        #have not replaced this line: notwav_rc = (rpix_oc[o]==0.)[None,:]
+        wavmap_orc[o,mask] = 0.
+
+    if log is not None:
+        log.message('\n  Wavl coeff rows:  O    %4i     E    %4i' % tuple(cofrows_o), with_header=False)
+        log.message('  Bottom, top row:  O %4i %4i   E %4i %4i' \
+            % tuple(legy_od.flatten()), with_header=False)
+        log.message('\n  Slit axis row:    O    %4i     E    %4i' % tuple(axisrow_o), with_header=False)
+        log.message('  Bottom, top row:  O %4i %4i   E %4i %4i \n' \
+            % tuple(edgerow_od.flatten()), with_header=False)
+
+    return wavmap_orc
+
  
 def wave_map(dbfilename, edgerow_od, rows, cols, order=3):
     """Read in the solution file and create a wave map from the solution
