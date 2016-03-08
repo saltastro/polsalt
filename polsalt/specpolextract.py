@@ -223,6 +223,7 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
             badbinall_orc |= badbinnew_orc
             badbinone_orc |= badbinnew_orc
             hdusum['BPM'].data = badbinnew_orc.astype('uint8')
+            psf_orc *= istarget_orc.astype(int)
 
             if debug: 
 #                hdusum.writeto(obsname+".fits",clobber=True)
@@ -263,7 +264,15 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
                 pyfits.PrimaryHDU(binedge_orw.astype('float32')).writeto(obsname+'_binedge_orw.fits',clobber=True)
                 pyfits.PrimaryHDU(psf_orw.astype('float32')).writeto(obsname+'_psf_orw.fits',clobber=True)
 
-            psf_orw /= psf_orw.sum(axis=1)[:,None,:]
+            psfnorm_orw = np.repeat(psf_orw.sum(axis=1),rows,axis=1).reshape(2,rows,-1)
+            psf_orw[psfnorm_orw>0.] /= psfnorm_orw[psfnorm_orw>0.]
+            pmax = np.minimum(1.,np.median(psf_orw[psfnorm_orw>0.].reshape((2,rows,-1)).max(axis=1)))
+
+            log.message('Stellar profile width: %8.2f arcsec' % ((1./pmax)*rbin/8.), with_header=False)     
+            pwidth = int(1./pmax)
+
+            if debug: 
+                pyfits.PrimaryHDU(psf_orw.astype('float32')).writeto(obsname+'_psfnormed_orw.fits',clobber=True)
 
         # set up optional image-dependent column shift for slitless data
             colshiftfilename = "colshift.txt"
@@ -273,7 +282,8 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
                 shifts = img_I.shape[0]
                 log.message('Column shift: \n Images '+shifts*'%5i ' % tuple(img_I), with_header=False)                 
                 log.message(' Bins    '+shifts*'%5.2f ' % tuple(dcol_I), with_header=False)                 
-               
+
+            log.message('\nArcsec offset     Output File', with_header=False)                  
         # background-subtract and extract spectra
             for i in range(outfiles):
                 hdulist = pyfits.open(outfilelist[i])
@@ -311,7 +321,6 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
                     pyfits.PrimaryHDU(badbin_orw.astype('uint8')).writeto('badbin_'+tnum+'_orw.fits',clobber=True)
   
             # use master psf shifted in row to allow for guide errors
-                pwidth = 2*int(1./psf_orw.max())
                 ok_w = ((psf_orw*badbin_orw).sum(axis=1) < 0.03/float(pwidth/2)).all(axis=0)
                 crosscor_s = np.zeros(pwidth)
                 for s in range(pwidth):
@@ -363,6 +372,7 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
                 hduout.append(pyfits.ImageHDU(data=badbin_ow.astype("uint8").reshape((2,1,wavs)), header=header, name='BPM'))            
             
                 hduout.writeto('e'+outfilelist[i],clobber=True,output_verify='warn')
-                log.message('Output file '+'e'+outfilelist[i] , with_header=False)
+                log.message('  %8.2f   e%s' % (pshift*rbin/8.,outfilelist[i]), with_header=False)
+
     return
 
