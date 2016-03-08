@@ -2,6 +2,7 @@ import os
 import numpy as np
 
 from saltobslog import obslog
+from astropy.table import Table
 
 DATADIR = os.path.dirname(__file__) + '/data/'
 
@@ -63,11 +64,62 @@ def list_configurations(infilelist, log):
     
     
     """
+    # set up the observing dictionary
+    obs_dict=obslog(infilelist)
+
+    for i in reversed(range(len(infilelist))):
+        if int(obs_dict['BS-STATE'][i][1])!=2: del infilelist[i]
+
+    obs_dict = obslog(infilelist)
+    for k in obs_dict.keys():
+        if len(obs_dict[k])==0: del obs_dict[k]
+    obs_tab = Table(obs_dict)
+
+    # create the configurations list
+    config_dict={}
+    confdatlist = configmap(obs_tab, config_list=('GRATING', 'GR-ANGLE', 'CAMANG', 'BVISITID'))
+    infilelist = np.array(infilelist)
+    for grating, grtilt, camang, blockvisit in confdatlist:
+        image_dict = {}
+        #things with the same configuration 
+        mask = ((obs_tab['GRATING']==grating) *  
+                     (obs_tab['GR-ANGLE']==grtilt) * 
+                     (obs_tab['CAMANG']==camang) *
+                     (obs_tab['BVISITID']==blockvisit)
+               )
+        objtype = obs_tab['OBJECT']
+        image_dict['arc'] = infilelist[mask * (objtype == 'ARC')]
+        image_dict['flat'] = infilelist[mask * (objtype == 'FLAT')]
+        image_dict['object'] = infilelist[mask * (objtype != 'ARC') *  (objtype != 'FLAT')]
+        config_dict[(grating, grtilt, camang)] = image_dict
+    return config_dict
+
+def configmap(obs_tab, config_list=('GRATING','GR-ANGLE', 'CAMANG')):
+    """Determine how many different configurations are in the list
+
+    Parameters
+    ----------
+    obstab: ~astropy.table.Table
+        Observing table of image headers
+
+    Returns
+    -------
+    configs: list
+        Set of configurations
+    """
+    return list(set(zip(*(obs_tab[x] for x in config_list))))
+
+
+def list_configurations_old(infilelist, log):
+    """For data observed prior 2015
+
+    """
     obs_dict=obslog(infilelist)
 
     for i in reversed(range(len(infilelist))):
         if int(obs_dict['BS-STATE'][i][1])!=2: del infilelist[i]
     obs_dict=obslog(infilelist)
+
 
     # Map out which arc goes with which image.  Use arc in closest wavcal block of the config.
     # wavcal block: neither spectrograph config nor track changes, and no gap in data files
@@ -77,7 +129,13 @@ def list_configurations(infilelist, log):
     trkno_i = np.zeros((infiles),dtype=int)
     trkno_i[1:] = ((np.abs(trkrho_i[1:]-trkrho_i[:-1]))>newtrk).cumsum()
 
-    confno_i,confdatlist = configmap(infilelist)
+    infiles = len(infilelist)
+    grating_i = [obs_dict['GRATING'][i].strip() for i in range(infiles)]
+    grang_i = np.array(map(float,obs_dict['GR-ANGLE']))
+    artic_i = np.array(map(float,obs_dict['CAMANG']))
+    configdat_i = [tuple((grating_i[i],grang_i[i],artic_i[i])) for i in range(infiles)]
+    confdatlist = list(set(configdat_i))          # list tuples of the unique configurations _c
+    confno_i = np.array([confdatlist.index(configdat_i[i]) for i in range(infiles)],dtype=int)
     configs = len(confdatlist)
 
     imageno_i = np.array([image_number(infilelist[i]) for i in range(infiles)])
@@ -122,16 +180,5 @@ def list_configurations(infilelist, log):
             log.message(("\nFor images: "+blkimages.shape[0]*"%i " % tuple(blkimages)) \
                 +("\n  Use Arc %5i" % imageno_i[iarc]), with_header=False)
     iarc_a = np.unique(iarc_i[iarc_i != -1])
-    return iarc_a, iarc_i
-
-def configmap(infilelist):
-    obs_dict=obslog(infilelist)
-    infiles = len(infilelist)
-    grating_i = [obs_dict['GRATING'][i].strip() for i in range(infiles)]
-    grang_i = np.array(map(float,obs_dict['GR-ANGLE']))
-    artic_i = np.array(map(float,obs_dict['CAMANG']))
-    configdat_i = [tuple((grating_i[i],grang_i[i],artic_i[i])) for i in range(infiles)]
-    confdatlist = list(set(configdat_i))          # list tuples of the unique configurations _c
-    confno_i = np.array([confdatlist.index(configdat_i[i]) for i in range(infiles)],dtype=int)
-    return confno_i,confdatlist
+    return iarc_a, iarc_i, confno_i, confdatlist
 
