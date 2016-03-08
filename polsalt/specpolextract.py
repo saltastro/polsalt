@@ -122,31 +122,26 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
     """
 
     with logging(logfile, debug) as log:
-        #create the observation log
-        #obs_dict=obslog(infilelist)
+ 
+        #check to see if any data were observed prior to 2015
+        old_data=False
+        for date in obs_dict['DATE-OBS']:
+            if int(date[0:4]) < 2015: old_data=True
 
-        # get rid of arcs
-        #for i in range(len(infilelist))[::-1]:
-            #if (obs_dict['OBJECT'][i].upper().strip()=='ARC'): del infilelist[i]            
-        #infiles = len(infilelist)
+        if old_data:
+            iarc_a, iarc_i, confno_i, confdatlist = list_configurations_old(infilelist, log)
+            arcs = len(iarc_a)
+            config_dict = {}
+            for i in set(confno_i):
+                image_dict={}
+                image_dict['arcs']=[infilelist[iarc_a[i]]]
+                ilist = [infilelist[x] for x in np.where(iarc_i==iarc_a[i])[0]]
+                ilist.remove(image_dict['arcs'][0])
+                image_dict['object'] = ilist
+                config_dict[confdatlist[i]] = image_dict
+        else:
+            config_dict = list_configurations(infilelist, log)
 
-        # contiguous images of the same object and config are grouped together as an observation
-        #obs_dict=obslog(infilelist)
-        #confno_i,confdatlist = configmap(infilelist)
-        #configs = len(confdatlist)
-        #objectlist = list(set(obs_dict['OBJECT']))
-        #objno_i = np.array([objectlist.index(obs_dict['OBJECT'][i]) for i in range(infiles)],dtype=int)
-        #obs_i = np.zeros((infiles),dtype=int)
-        #obs_i[1:] = ((objno_i[1:] != objno_i[:-1]) | (confno_i[1:] != confno_i[:-1]) ).cumsum()
-        #dum,iarg_b =  np.unique(obs_i,return_index=True)    # gives i for beginning of each obs
-        #obss = iarg_b.shape[0]
-        #obscount_b = np.zeros((obss),dtype=int)
-        #oclist_b = np.array([[objno_i[iarg_b[b]], confno_i[iarg_b[b]]] for b in range(obss)])        
-        #if obss>1:
-            #for b in range(1,obss): 
-                #obscount_b[b] = (oclist_b[b]==oclist_b[0:b]).all(axis=1).sum()  
-
-        config_dict = list_configurations(infilelist, log)
         config_count = 0
 
         for config in config_dict:
