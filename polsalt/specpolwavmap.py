@@ -37,20 +37,18 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
     obsdate=os.path.basename(infilelist[0])[7:15]
 
     with logging(logfile, debug) as log:
-        # create the observation log
-        obs_dict=obslog(infilelist)
-        confno_i,confdatlist = configmap(infilelist)
         log.message('Pysalt Version: '+pysalt.verno, with_header=False)
       
-        iarc_a, iarc_i  = list_configurations(infilelist, log)
-        arcs = iarc_a.shape[0]
+        # group the files together
+        config_dict = list_configurations(infilelist, log)
 
-        for a in range(arcs):
+
+        for config in config_dict:
             
             #set up some information needed later
-            iarc = iarc_a[a]
-            hduarc = pyfits.open(infilelist[iarc])
-            image_no = image_number(infilelist[iarc])
+            iarc = config_dict[config]['arc'][0]
+            hduarc = pyfits.open(iarc)
+            image_no = image_number(iarc)
             rows, cols = hduarc[1].data.shape
             grating = hduarc[0].header['GRATING']
             grang = hduarc[0].header['GR-ANGLE']
@@ -73,7 +71,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
 
     
             #set up the lamp to be used
-            lamp=obs_dict['LAMPID'][iarc].strip().replace(' ', '')
+            lamp=hduarc[0].header['LAMPID'].strip().replace(' ', '')
             if lamp == 'NONE': lamp='CuAr'
             lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])    
 
@@ -98,14 +96,14 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             # for images using this arc,save split data along third fits axis, 
             # add wavmap extension, save as 'w' file
             hduwav = pyfits.ImageHDU(data=wavmap_orc.astype('float32'), header=hduarc['SCI'].header, name='WAV')                 
-            for i in np.where(iarc_i==iarc_a[a])[0]:  
-                hdu = pyfits.open(infilelist[i])
+            for image in config_dict[config]['object']:
+                hdu = pyfits.open(image)
                 hdu, splitrow = specpolsplit(hdu, splitrow=splitrow)
                 hdu['BPM'].data[wavmap_orc==0.] = 1 
                 hdu.append(hduwav)
                 for f in ('SCI','VAR','BPM','WAV'): hdu[f].header.update('CTYPE3','O,E')
-                hdu.writeto('w'+infilelist[i],clobber='True')
-                log.message('Output file '+'w'+infilelist[i] , with_header=False)
+                hdu.writeto('w'+image,clobber='True')
+                log.message('Output file '+'w'+image, with_header=False)
 
     return
 
