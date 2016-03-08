@@ -123,25 +123,7 @@ def specpolextract(infilelist, logfile='salt.log', debug=False):
 
     with logging(logfile, debug) as log:
  
-        #check to see if any data were observed prior to 2015
-        old_data=False
-        for date in obs_dict['DATE-OBS']:
-            if int(date[0:4]) < 2015: old_data=True
-
-        if old_data:
-            iarc_a, iarc_i, confno_i, confdatlist = list_configurations_old(infilelist, log)
-            arcs = len(iarc_a)
-            config_dict = {}
-            for i in set(confno_i):
-                image_dict={}
-                image_dict['arcs']=[infilelist[iarc_a[i]]]
-                ilist = [infilelist[x] for x in np.where(iarc_i==iarc_a[i])[0]]
-                ilist.remove(image_dict['arcs'][0])
-                image_dict['object'] = ilist
-                config_dict[confdatlist[i]] = image_dict
-        else:
-            config_dict = list_configurations(infilelist, log)
-
+        config_dict = list_configurations(infilelist, log)
         config_count = 0
 
         for config in config_dict:

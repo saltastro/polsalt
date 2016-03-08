@@ -67,9 +67,30 @@ def list_configurations(infilelist, log):
     # set up the observing dictionary
     obs_dict=obslog(infilelist)
 
+    # hack to remove potentially bad data
     for i in reversed(range(len(infilelist))):
         if int(obs_dict['BS-STATE'][i][1])!=2: del infilelist[i]
+    obs_dict=obslog(infilelist)
 
+    # inserted to take care of older observations
+    old_data=False
+    for date in obs_dict['DATE-OBS']:
+        if int(date[0:4]) < 2015: old_data=True
+
+    if old_data:
+        iarc_a, iarc_i, confno_i, confdatlist = list_configurations_old(infilelist, log)
+        arcs = len(iarc_a)
+        config_dict = {}
+        for i in set(confno_i):
+            image_dict={}
+            image_dict['arcs']=[infilelist[iarc_a[i]]]
+            ilist = [infilelist[x] for x in np.where(iarc_i==iarc_a[i])[0]]
+            ilist.remove(image_dict['arcs'][0])
+            image_dict['object'] = ilist
+            config_dict[confdatlist[i]] = image_dict
+        return config_dict
+
+    # delete bad columns
     obs_dict = obslog(infilelist)
     for k in obs_dict.keys():
         if len(obs_dict[k])==0: del obs_dict[k]
@@ -116,9 +137,7 @@ def list_configurations_old(infilelist, log):
     """
     obs_dict=obslog(infilelist)
 
-    for i in reversed(range(len(infilelist))):
-        if int(obs_dict['BS-STATE'][i][1])!=2: del infilelist[i]
-    obs_dict=obslog(infilelist)
+        
 
 
     # Map out which arc goes with which image.  Use arc in closest wavcal block of the config.
