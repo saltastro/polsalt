@@ -89,8 +89,8 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             drow_oc = (rpix_oc-rpix_oc[:,cols/2][:,None])/rbin
 
             wavmap_orc = pol_wave_map(hduarc, image_no, drow_oc, rows, cols,
-                                      function=function, order=order,
-                                      log=log)
+                                      lampfile=lampfile, function=function, order=order,
+                                      automethod=automethod, log=log, logfile=logfile)
 
 
             # for images using this arc,save split data along third fits axis, 
@@ -107,7 +107,9 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
 
     return
 
-def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, function='legendre', order=3, log=None):
+def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile, 
+                 function='legendre', order=3, automethod="Matchlines",
+                 log=None, logfile=None):
     """ Create a wave_map for an arc image
 
     For O,E arc straighten spectrum, find fov, identify for each, form (unstraightened) wavelength map   
@@ -128,11 +130,17 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, function='legendre', ord
     cols: int
        Nubmer of columns in original data
 
+    lampfile: str
+       File name containing line list 
+
     function: str
        Function used for wavelength fitting
 
     order: int
        Order of fitting function
+
+    automethod: str
+       Method for automated line identification
 
     log: log
        Log for output
