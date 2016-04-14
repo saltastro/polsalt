@@ -96,7 +96,7 @@ def specpolfinalstokes(infile_list,polcal='polcal.txt',logfile='salt.log',debug=
                 stokes_jsw[j] = pyfits.open(infile_list[i])['SCI'].data.reshape((2,-1))
                 var_jsw[j] = pyfits.open(infile_list[i])['VAR'].data.reshape((2,-1))
                 bpm_jsw[j] = pyfits.open(infile_list[i])['BPM'].data.reshape((2,-1))
-                wav_jw[j] = np.mgrid[wav0:(wav0+cols*dwav):dwav]
+                wav_jw[j] = wav0 + dwav*np.arange(cols) 
                 if int(count)==1:
                     comblist.append((j,object,config,wvplt,count,wppat))
                 else:
