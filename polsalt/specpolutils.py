@@ -1,6 +1,8 @@
 import os
 import numpy as np
 
+from pyraf import iraf
+from iraf import pysalt
 from saltobslog import obslog
 from astropy.table import Table
 
@@ -83,9 +85,9 @@ def list_configurations(infilelist, log):
         config_dict = {}
         for i in set(confno_i):
             image_dict={}
-            image_dict['arcs']=[infilelist[iarc_a[i]]]
+            image_dict['arc']=[infilelist[iarc_a[i]]]
             ilist = [infilelist[x] for x in np.where(iarc_i==iarc_a[i])[0]]
-            ilist.remove(image_dict['arcs'][0])
+            ilist.remove(image_dict['arc'][0])
             image_dict['object'] = ilist
             config_dict[confdatlist[i]] = image_dict
         return config_dict
