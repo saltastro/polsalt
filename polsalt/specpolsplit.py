@@ -38,7 +38,7 @@ def specpolsplit(hdu, splitrow=None, wollaston_file=None):
         # given in the wollaston file
         cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")]
         woll_pix = read_wollaston(hdu, wollaston_file)
-        print woll_pix[:, cols/2]
+#        print woll_pix[:, cols/2]
         axisrow_o = ((2052 + woll_pix[:,cols/2])/rbin).astype(int)
 
         data_y = hdu[1].data.sum(axis=1)

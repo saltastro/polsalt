@@ -1,8 +1,6 @@
 import os
 import numpy as np
 
-from pyraf import iraf
-from iraf import pysalt
 from saltobslog import obslog
 from astropy.table import Table
 
@@ -85,9 +83,9 @@ def list_configurations(infilelist, log):
         config_dict = {}
         for i in set(confno_i):
             image_dict={}
-            image_dict['arc']=[infilelist[iarc_a[i]]]
+            image_dict['arcs']=[infilelist[iarc_a[i]]]
             ilist = [infilelist[x] for x in np.where(iarc_i==iarc_a[i])[0]]
-            ilist.remove(image_dict['arc'][0])
+            ilist.remove(image_dict['arcs'][0])
             image_dict['object'] = ilist
             config_dict[confdatlist[i]] = image_dict
         return config_dict
@@ -110,7 +108,7 @@ def list_configurations(infilelist, log):
                      (obs_tab['CAMANG']==camang) *
                      (obs_tab['BVISITID']==blockvisit)
                )
-        objtype = obs_tab['OBJECT']
+        objtype = obs_tab['CCDTYPE']                # kn changed from OBJECT: ARC listed consistently
         image_dict['arc'] = infilelist[mask * (objtype == 'ARC')]
         image_dict['flat'] = infilelist[mask * (objtype == 'FLAT')]
         image_dict['object'] = infilelist[mask * (objtype != 'ARC') *  (objtype != 'FLAT')]

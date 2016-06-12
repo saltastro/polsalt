@@ -218,6 +218,9 @@ def create_raw_stokes_file(first_pair_file, second_pair_file, output_file, wppat
         var_fow[f] = hdulist['var'].data.reshape((2, -1))
         bpm_fow[f] = hdulist['bpm'].data.reshape((2, -1))
 
+  # Mark as bad bins with negative intensities
+    bpm_fow[sci_fow < 0] = 1
+
         # compute intensity, E-O stokes spectrum, VAR, BPM.
         # fits out: unnormalized (int,stokes),(length 1) spatial,wavelength
         # wavelength marked bad if it is bad in either filter or order
