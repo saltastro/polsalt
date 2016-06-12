@@ -1,0 +1,5 @@
+# RSS linear polarization PA zeropoint
+# dummy for debug
+# date  dPA(deg)
+00000000  0.0   
+

@@ -42,7 +42,6 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
         # group the files together
         config_dict = list_configurations(infilelist, log)
 
-
         for config in config_dict:
             
             #set up some information needed later
@@ -75,8 +74,8 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             if lamp == 'NONE': lamp='CuAr'
             lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])    
 
-            # some houskeeping for bad keywords
-            #hduarc[0].header.update('MASKTYP','LONGSLIT')
+            # some housekeeping for bad keywords
+            hduarc[0].header.update('MASKTYP','LONGSLIT')   # until MOS is working
             del hduarc['VAR']
             del hduarc['BPM']
     
@@ -212,9 +211,15 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
         wavmap_orc[o] = correct_wollaston(wavmap_yc,drow_oc[o])
 
         y, x = np.indices(wavmap_orc[o].shape)
+
+# fixing problem in 0312 sc wavmap
+        notwav_c = np.isnan(drow_oc[o])
+        drow_oc[o,notwav_c] = 0.
         mask = (y < edgerow_od[o,0] + drow_oc[o]) | (y > edgerow_od[o,1] + drow_oc[o])
-        #have not replaced this line: notwav_rc = (rpix_oc[o]==0.)[None,:]
+
         wavmap_orc[o,mask] = 0.
+        wavmap_orc[o][:,notwav_c] = 0.
+#
 
     if log is not None:
         log.message('\n  Wavl coeff rows:  O    %4i     E    %4i' % tuple(cofrows_o), with_header=False)
