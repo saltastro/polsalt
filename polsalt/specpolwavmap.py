@@ -43,15 +43,15 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
         config_dict = list_configurations(infilelist, log)
 
         for config in config_dict:
-            
-            #set up some information needed later
+        #set up some information needed later
             iarc = config_dict[config]['arc'][0]
             hduarc = pyfits.open(iarc)
             image_no = image_number(iarc)
             rows, cols = hduarc[1].data.shape
-            grating = hduarc[0].header['GRATING']
+            grating = hduarc[0].header['GRATING'].strip()
             grang = hduarc[0].header['GR-ANGLE']
             artic = hduarc[0].header['CAMANG']
+
             cbin, rbin = [int(x) for x in hduarc[0].header['CCDSUM'].split(" ")]
 
             # need this for the distortion correction 
@@ -75,7 +75,9 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])    
 
             # some housekeeping for bad keywords
-            hduarc[0].header.update('MASKTYP','LONGSLIT')   # until MOS is working
+            if hduarc[0].header['MASKTYP'].strip() == 'MOS':   # for now, MOS treated as single, short 1 arcsec longslit
+                hduarc[0].header.update('MASKTYP','LONGSLIT')
+                hduarc[0].header.update('MASKID','P001000P99')
             del hduarc['VAR']
             del hduarc['BPM']
     
@@ -182,6 +184,7 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
         hduarc['SCI'].data = arc_yc
         arcimage = "arc_"+str(image_no)+"_"+str(o)+".fits"
         dbfilename = "arcdb_"+str(image_no)+"_"+str(o)+".txt"
+        ystart = axisrow_o[o]
 
         if (not os.path.exists(dbfilename)):
             if guessfile is not None:
@@ -190,7 +193,6 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
                 guessfile=dbfilename
                 guesstype = 'rss'
             hduarc.writeto(arcimage,clobber=True)
-            ystart = axisrow_o[o]
                  
             specidentify(arcimage, lampfile, dbfilename, guesstype=guesstype,
                 guessfile=guessfile, automethod=automethod,  function=function,  order=order,
@@ -199,7 +201,8 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
             if (not debug): os.remove(arcimage)
 
                 
-        wavmap_yc, cofrows_o[o], legy_od[o] = wave_map(dbfilename, edgerow_od[o], rows, cols, order)
+        wavmap_yc, cofrows_o[o], legy_od[o], edgerow_od[o] = \
+                wave_map(dbfilename, edgerow_od[o], rows, cols, ystart, order, log=log)
         #TODO: Once rest is working, try to switch to pysalt wavemap
         #soldict = sr.entersolution(dbfilename)
         #wavmap_yc = wavemap(hduarc, soldict, caltype='line', function=function, 
@@ -232,7 +235,7 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
     return wavmap_orc
 
  
-def wave_map(dbfilename, edgerow_od, rows, cols, order=3):
+def wave_map(dbfilename, edgerow_d, rows, cols, ystart, order=3, log=None):
     """Read in the solution file and create a wave map from the solution
 
     Parameters
@@ -273,30 +276,34 @@ def wave_map(dbfilename, edgerow_od, rows, cols, order=3):
     legcof_lY[1] = 1.5*legcof_lY[3] + (dblegcof_lY[1]-1.5*dblegcof_lY[3]) + \
         3.*dblegcof_lY[2]*xcenter + 7.5*dblegcof_lY[3]*xcenter**2
 
-    # remove rows outside slit and outlier fits
-    argYbad = np.where((legy_Y<edgerow_od[0]) | (legy_Y>edgerow_od[1]))[0]
+    # remove rows outside slit
+    argYbad = np.where((legy_Y<edgerow_d[0]) | (legy_Y>edgerow_d[1]))[0]
     legy_Y = np.delete(legy_Y, argYbad,axis=0)
     legcof_lY = np.delete(legcof_lY, argYbad,axis=1)
-    mediancof_l = np.median(legcof_lY,axis=1)
-    rms_l = np.sqrt(np.median((legcof_lY - mediancof_l[:,None])**2,axis=1))
-    sigma_lY = np.abs((legcof_lY - mediancof_l[:,None]))/rms_l[:,None]
+    cofrows = legy_Y.shape[0]
+    if cofrows > 3:
+    # remove outlier fits
+        mediancof_l = np.median(legcof_lY,axis=1)
+        rms_l = np.sqrt(np.median((legcof_lY - mediancof_l[:,None])**2,axis=1))
+        sigma_lY = np.abs((legcof_lY - mediancof_l[:,None]))/rms_l[:,None]
+        argYbad = np.where((sigma_lY>4).any(axis=0))[0]
+        legy_Y = np.delete(legy_Y, argYbad,axis=0)
+        legcof_lY = np.delete(legcof_lY, argYbad,axis=1)
+        cofrows = legy_Y.shape[0]
 
-    argYbad = np.where((sigma_lY>4).any(axis=0))[0]
-    legy_Y = np.delete(legy_Y, argYbad,axis=0)
-    legcof_lY = np.delete(legcof_lY, argYbad,axis=1)
-    cofrows_o = legy_Y.shape[0]
-    legy_od = legy_Y.min(),legy_Y.max()
-
-    if cofrows_o < 5:
-    # for future: if few lines in db, use model shifted to agree, for now just use mean
-        log.message('WARNING, INSUFFICIENT DATABASE ROWS, USE MEAN' , with_header=False)                    
-        legcof_l = legcof_lY.mean(axis=1)
-        wavmap_yc = np.polynomial.legendre.legval(np.arange(cols),legcof_l)
+    if cofrows < 5:
+    # assume this is short MOS slit: use ystart solution for all rows, undo the slit edge settings
+        log.message('FEW DATABASE ROWS, ASSUME MOS, USE START' , with_header=False)                    
+        legcof_l = legcof_lY[:,legy_Y==ystart].ravel()
+        wavmap_yc = np.tile(np.polynomial.legendre.legval(np.arange(-cols/2,cols/2),legcof_l)[:,None],rows/2).T
+        edgerow_d = 0,rows/2
+        cofrows = 1
+        legy_d = ystart,ystart
     else:
     # smooth wavmap along rows by fitting L_0 to quadratic, others to linear fn of row
         ycenter = rows/4.
         Y_y = np.arange(-ycenter,ycenter)
-        aa = np.vstack(((legy_Y-ycenter)**2,(legy_Y-ycenter),np.ones(cofrows_o))).T
+        aa = np.vstack(((legy_Y-ycenter)**2,(legy_Y-ycenter),np.ones(cofrows))).T
         polycofs = la.lstsq(aa,legcof_lY[0])[0]
         legcof_ly = np.zeros((order+1,rows/2))
         legcof_ly[0] = np.polyval(polycofs,Y_y)
@@ -306,5 +313,6 @@ def wave_map(dbfilename, edgerow_od, rows, cols, order=3):
         wavmap_yc = np.zeros((rows/2,cols))
         for y in range(rows/2):
             wavmap_yc[y] = np.polynomial.legendre.legval(np.arange(-cols/2,cols/2),legcof_ly[:,y])
+        legy_d = legy_Y.min(),legy_Y.max()
 
-    return wavmap_yc, cofrows_o, legy_od
+    return wavmap_yc, cofrows, legy_d, edgerow_d

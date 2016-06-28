@@ -36,7 +36,7 @@ def read_wollaston(hdu, wollaston_file):
     #set up data
     data= hdu['SCI'].data
     rows,cols = data.shape
-    grating = hdu[0].header['GRATING']
+    grating = hdu[0].header['GRATING'].strip()
     grang = hdu[0].header['GR-ANGLE']
     artic = hdu[0].header['CAMANG']
     cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")]

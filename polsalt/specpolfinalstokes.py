@@ -135,10 +135,12 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
             Linear_PolZeropoint_override=True
             PAZeropoint_override=True
             pacaltype = "Instrumental"
+            calhistorylist = ["Uncalibrated"]
         elif Linear_PolZeropoint_override:
             HW_Cal_override=True
             PAZeropoint_override=True
             pacaltype = "Telescope"
+            calhistorylist = ["Uncalibrated"]
         elif PAZeropoint_override: 
             calhistorylist = [os.path.basename(HWCalibrationfile),os.path.basename(PolZeropointfile)]
         else:
@@ -168,13 +170,8 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                     cycles = 1
                     lampid = pyfits.getheader(infilelist[i],0)['LAMPID'].strip().upper()
                     telpa = float(pyfits.getheader(infilelist[i],0)['TELPA'])
-                    if lampid=="NONE":
-                        pacaltype = "Equatorial"
-                        hpa_l -= (telpa % 180)
-                    else:
-                        pacaltype ="Instrumental"
-                    calinfo = (pacaltype)
-                    log.message('  Calibration: '+calinfo, with_header=False)
+                    if lampid != "NONE": pacaltype ="Instrumental"
+                    if pacaltype == "Equatorial": hpa_l -= (telpa % 180)
                 else:
                     if rawlist[j-1][1:4] != rawlist[j][1:4]: cycles = 1
                     else: cycles += 1
@@ -308,7 +305,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                         log.message(("    Mean chisq/dof: %5.2f  Estimated sys %%error: %5.2f") % \
                             (chisqdof,100.*syserr), with_header=False)
 
-                    if ~HW_Cal_override:
+                    if not HW_Cal_override:
                     # apply hw efficiency calibration
                         heff_w = interp1d(hwav_l,heff_l,kind='cubic',bounds_error=False)(wav_kw[k])
                         ok_w &= ~np.isnan(heff_w)

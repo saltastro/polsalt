@@ -16,7 +16,7 @@ and up to date.
 # polSALT: use local version of createbadpixel = masterbadpixel
 # polSALT: fix VAR and BPM extensions after mosaic
 
-import os, sys, glob, shutil, inspect
+import os, sys, glob, copy, shutil, inspect
 
 import numpy as np
 from astropy.io import fits as pyfits
@@ -42,14 +42,13 @@ debug = True
 import reddir
 datadir = os.path.dirname(inspect.getfile(reddir))+"/data/"
 
-def imred(infile_list, prodir, bpmfile=None, gaindb = None, cleanup=True):
+def imred(infilelist, prodir, bpmfile=None, gaindb = None, cleanup=True):
     #get the name of the files
-    infiles=','.join(['%s' % x for x in infile_list])
+    infiles=','.join(['%s' % x for x in infilelist])
     
-
     #get the current date for the files
-    obsdate=os.path.basename(infile_list[0])[1:9]
-    print obsdate
+    obsdate=os.path.basename(infilelist[0])[1:9]
+    print "Observation Date: ",obsdate
 
     #set up some files that will be needed
     logfile='im'+obsdate+'.log'
@@ -57,7 +56,7 @@ def imred(infile_list, prodir, bpmfile=None, gaindb = None, cleanup=True):
     dbfile='spec%s.db' % obsdate
 
     #create the observation log
-    obs_dict=obslog(infile_list)
+#    obs_dict=obslog(infilelist)
 
     verbose=True
 
@@ -66,10 +65,21 @@ def imred(infile_list, prodir, bpmfile=None, gaindb = None, cleanup=True):
  
     #prepare the data
 
-        for img in infile_list:
+        for img in infilelist:
             hdu = pyfits.open(img)
+
+            # for backwards compatibility
+            hdu = remove_duplicate_keys(hdu)  
+            if not 'XTALK' in hdu[1].header:
+                hdu[1].header['XTALK']=1474
+                hdu[2].header['XTALK']=1474
+                hdu[3].header['XTALK']=1166
+                hdu[4].header['XTALK']=1111
+                hdu[5].header['XTALK']=1377
+                hdu[6].header['XTALK']=1377
+
             img = os.path.basename(img)
-        
+                                                                    
             hdu = prepare(hdu, createvar=False, badpixelstruct=None)
             if not cleanup: hdu.writeto('p'+img, clobber=True)
 
@@ -79,14 +89,30 @@ def imred(infile_list, prodir, bpmfile=None, gaindb = None, cleanup=True):
                        plotover=False, log=log, verbose=verbose)    
             if not cleanup: hdu.writeto('bp'+img, clobber=True)
 
-            # for backwards compatibility  
-            if not 'XTALK' in hdu[1].header:
-                hdu[1].header['XTALK']=1474
-                hdu[2].header['XTALK']=1474
-                hdu[3].header['XTALK']=1166
-                hdu[4].header['XTALK']=1111
-                hdu[5].header['XTALK']=1377
-                hdu[6].header['XTALK']=1377
+            # put windowed data into full image
+            exts = len(hdu)
+            if exts > 7:
+                rows, cols = hdu[1].data.shape
+                cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")]
+                ampsecO = hdu[1].header["AMPSEC"].strip("[]").split(",")
+                ampsecE = hdu[7].header["AMPSEC"].strip("[]").split(",")
+                rO = int((float(ampsecO[1].split(":")[0]) - 1.)/rbin)
+                rE = int((float(ampsecE[1].split(":")[0]) - 1.)/rbin)
+                keylist = ['BIASSEC','DATASEC','AMPSEC','CCDSEC','DETSEC']
+                oldlist = [hdu[1].header[key].strip("[]").split(",")[1] for key in keylist]
+                newlist = 2*['1:'+str(int(0.5+4102/rbin))]+3*[str(int(rbin/2))+':4102']
+
+                for amp in range(6):
+                    hduO = hdu[amp+1].copy()                    
+                    hdu[amp+1].data = np.zeros((4102/rbin,cols))
+                    hdu[amp+1].data[rO:rO+rows] = hduO.data
+                    hdu[amp+1].data[rE:rE+rows] = hdu[amp+7].data
+                    hdu[amp+1].update_header
+                    for k,key in enumerate(keylist): 
+                        hdu[amp+1].header[key] = \
+                            hdu[amp+1].header[key].replace(oldlist[k],newlist[k])
+                del hdu[7:]
+                hdu[0].header['NSCIEXT'] = 6
      
             badpixelstruct = saltio.openfits(bpmfile)
             hdu = add_variance(hdu, badpixelstruct)
@@ -116,11 +142,10 @@ def imred(infile_list, prodir, bpmfile=None, gaindb = None, cleanup=True):
                hdu = multicrclean(hdu, crtype='edge', thresh=thresh, mbox=11, bthresh=5.0,
                   flux_ratio=0.2, bbox=25, gain=1.0, rdnoise=5.0, fthresh=5.0, bfactor=2,
                   gbox=3, maxiter=5, log=log, verbose=verbose)
-
+               for ext in range(13,19): hdu[ext].data = hdu[ext].data.astype('uint8')
             hdu.writeto('xgbp'+img, clobber=True)
             hdu.close()
         
-
     #mosaic the data
     #khn: attempt to use most recent previous geometry to obsdate.  
     #NOTE: mosaicing does not do this correctly
@@ -139,7 +164,7 @@ def imred(infile_list, prodir, bpmfile=None, gaindb = None, cleanup=True):
        saltmosaic('xgbpP*fits', '', 'm', geomfile, interp='linear', cleanup=True, geotran=True, clobber=True, logfile=logfile, verbose=True)
     #khn: fix mosaiced VAR and BPM extensions
     #khn: fix mosaiced bpm missing some of gap
-    for img in infile_list:
+    for img in infilelist:
         filename = 'mxgbp'+os.path.basename(img)
         hdu = pyfits.open(filename, 'update')
         hdu[2].header.update('EXTNAME','VAR')
@@ -159,6 +184,19 @@ def imred(infile_list, prodir, bpmfile=None, gaindb = None, cleanup=True):
            for f in glob.glob('bp*fits'): os.remove(f)
            for f in glob.glob('gbp*fits'): os.remove(f)
            for f in glob.glob('xgbp*fits'): os.remove(f)
+
+def remove_duplicate_keys(hdu):
+    # in case of duplicate primary header keys, remove those with blank values
+    keylist = hdu[0].header.keys()
+    vallist = hdu[0].header.values()
+    dupkeylist = list(set([x for x in keylist if keylist.count(x)>1]))
+    delarglist = []
+    for key in dupkeylist:
+        arglist = [i for i in range(len(keylist)) if keylist[i]==key]
+        for arg in arglist:
+            if len(vallist[arg].strip()) == 0: delarglist.append(arg)
+    for arg in sorted(delarglist,reverse=True): del hdu[0].header[arg]
+    return hdu
 
 def add_variance_files(filenames, bpmfile):
     file_list=glob.glob(filenames)
@@ -210,12 +248,11 @@ def masterbadpixel(inhdu, bphdu, sci_ext, bp_ext):
             master_rc[:masterrows,:mastercols] = bphdu[masterext].data
             masterrows,mastercols=(masterrows+(masterrows % rbin),mastercols+(mastercols % cbin))
             ampsec = inhdu[sci_ext].header["AMPSEC"].strip("[]").split(",")
-            r1,r2 = (np.array(ampsec[1].split(":")).astype(int) / rbin) * rbin
-            c1,c2 = (np.array(ampsec[0].split(":")).astype(int) / cbin) * cbin
-            if c1 > c2: c1,c2 = c2,c1
+            r1 = int((float(ampsec[1].split(":")[0]) - 1.)/rbin)
+            c1 = int((float(ampsec[0].split(":")[0]) - 1.)/cbin)
             bin_rc = (master_rc.reshape(masterrows/rbin,rbin,mastercols/cbin,cbin).sum(axis=3).sum(axis=1) > 0)
-            data = bin_rc[ r1:r2, c1:c2 ].astype('uint8')
-            
+            data = bin_rc[ r1:r1+rows, c1:c1+cols ].astype('uint8')
+        
     header=inhdu[sci_ext].header.copy()
     header.update('EXTVER',bp_ext)
     header.update('SCIEXT',sci_ext,comment='Extension of science frame')

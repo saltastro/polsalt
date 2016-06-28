@@ -76,16 +76,16 @@ def list_configurations(infilelist, log):
     old_data=False
     for date in obs_dict['DATE-OBS']:
         if int(date[0:4]) < 2015: old_data=True
-
+    print old_data
     if old_data:
         iarc_a, iarc_i, confno_i, confdatlist = list_configurations_old(infilelist, log)
         arcs = len(iarc_a)
         config_dict = {}
         for i in set(confno_i):
             image_dict={}
-            image_dict['arcs']=[infilelist[iarc_a[i]]]
+            image_dict['arc']=[infilelist[iarc_a[i]]]
             ilist = [infilelist[x] for x in np.where(iarc_i==iarc_a[i])[0]]
-            ilist.remove(image_dict['arcs'][0])
+            ilist.remove(image_dict['arc'][0])
             image_dict['object'] = ilist
             config_dict[confdatlist[i]] = image_dict
         return config_dict
@@ -136,9 +136,6 @@ def list_configurations_old(infilelist, log):
 
     """
     obs_dict=obslog(infilelist)
-
-        
-
 
     # Map out which arc goes with which image.  Use arc in closest wavcal block of the config.
     # wavcal block: neither spectrograph config nor track changes, and no gap in data files
