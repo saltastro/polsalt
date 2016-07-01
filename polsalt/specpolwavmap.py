@@ -43,6 +43,9 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
         config_dict = list_configurations(infilelist, log)
 
         for config in config_dict:
+            if len(config_dict[config]['arc']) == 0:
+                log.message('No Arc for this configuration:', with_header=False)
+                continue
         #set up some information needed later
             iarc = config_dict[config]['arc'][0]
             hduarc = pyfits.open(iarc)
