@@ -76,8 +76,9 @@ def list_configurations(infilelist, log):
     old_data=False
     for date in obs_dict['DATE-OBS']:
         if int(date[0:4]) < 2015: old_data=True
-    print old_data
+
     if old_data:
+        log.message("Configuration map for old data", with_header=False)
         iarc_a, iarc_i, confno_i, confdatlist = list_configurations_old(infilelist, log)
         arcs = len(iarc_a)
         config_dict = {}
@@ -99,6 +100,7 @@ def list_configurations(infilelist, log):
     # create the configurations list
     config_dict={}
     confdatlist = configmap(obs_tab, config_list=('GRATING', 'GR-ANGLE', 'CAMANG', 'BVISITID'))
+
     infilelist = np.array(infilelist)
     for grating, grtilt, camang, blockvisit in confdatlist:
         image_dict = {}
@@ -108,8 +110,19 @@ def list_configurations(infilelist, log):
                      (obs_tab['CAMANG']==camang) *
                      (obs_tab['BVISITID']==blockvisit)
                )
-        objtype = obs_tab['CCDTYPE']                # kn changed from OBJECT: ARC listed consistently
+        objtype = obs_tab['CCDTYPE']          # kn changed from OBJECT: CCDTYPE lists ARC consistently
         image_dict['arc'] = infilelist[mask * (objtype == 'ARC')]
+
+        # if no arc for this config look for a similar one with different BVISITID
+        if len(image_dict['arc']) == 0:
+            othermask = ((obs_tab['GRATING']==grating) *  \
+                     ((obs_tab['GR-ANGLE'] - grtilt) < .03) * ((obs_tab['GR-ANGLE'] - grtilt) > -.03) * \
+                     ((obs_tab['CAMANG'] - camang) < .05) * ((obs_tab['CAMANG'] - camang) > -.05) *   \
+                     (obs_tab['BVISITID'] != blockvisit))
+            image_dict['arc'] = infilelist[othermask * (objtype == 'ARC')]
+            if len(image_dict['arc']) > 0:
+                log.message("Warning: using arc from different BLOCKID", with_header=False)                
+            
         image_dict['flat'] = infilelist[mask * (objtype == 'FLAT')]
         image_dict['object'] = infilelist[mask * (objtype != 'ARC') *  (objtype != 'FLAT')]
         config_dict[(grating, grtilt, camang)] = image_dict

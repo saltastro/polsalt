@@ -20,10 +20,32 @@ def specpolextract_sc(infilelist,yoffo,dyasec,logfile):
 
     log = open(logfile,'a')
 
-    # first straighten out the spectra
+    # first estimate image tilt
+    tilt_i = np.full(len(infilelist),np.nan)
+
+    for i,img in enumerate(infilelist):
+        if (os.path.exists('c' + img)): continue
+        hdu = pyfits.open(img)
+        if hdu[0].header['CCDTYPE'] == 'ARC': continue 
+        rows, cols = hdu['SCI'].data[0].shape
+        cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")] 
+        col_c = np.arange(3*cols/16,5*cols/16) + (cols/2)*np.arange(2)[:,None]
+        y_oc = np.zeros((2,2))
+        for o,c in np.ndindex(2,2):     
+            y_oc[o,c] = np.median(hdu['SCI'].data[o,:,col_c[c]].sum(axis=0).argsort()[-17:])
+        tilt_i[i] = 2*cbin*(y_oc.mean(axis=0)[0]-y_oc.mean(axis=0)[1])
+        print img,": image tilt: ",tilt_i[i]
+        print >>log,img,": image tilt: ",tilt_i[i]
+
+    tilt = np.median(tilt_i[~np.isnan(tilt_i)])
+    print "Median image tilt (cw,total,pixels): ",tilt
+    print >>log,"Median image tilt (cw,total,pixels): ",tilt
+    log.flush
+        
+    # straighten out the spectra
     for img in infilelist:
         if (os.path.exists('c' + img)): continue
-        hdu=correct_files(pyfits.open(img))
+        hdu=correct_files(pyfits.open(img),tilt=tilt)
         hdu.writeto('c' + img, clobber=True)
         print 'c' + img
         print >>log,'c' + img
@@ -35,11 +57,9 @@ def specpolextract_sc(infilelist,yoffo,dyasec,logfile):
         ybin = int(hdu[0].header['CCDSUM'].split(' ')[1])
         dy = int(dyasec*(8/ybin))
         yo_o = np.zeros(2,dtype=int)
-        yo_o[0] = np.median(hdu[1].data[0].sum(axis=1).argsort()[-10:]) + yoffo
-        yo_o[1] = np.median(hdu[1].data[1].sum(axis=1).argsort()[-10:]) + yoffo*1.0075  # allow for magnification
-        print img,"  yo,ye,dy: ",yo_o,dy  
-        print >>log,img," yo,ye,dy: ",yo_o,dy
-        log.flush
+        yo_o[0] = np.median(hdu[1].data[0].sum(axis=1).argsort()[-9:]) + yoffo
+        yo_o[1] = np.median(hdu[1].data[1].sum(axis=1).argsort()[-9:]) + yoffo*1.0075  # allow for magnification
+
 
     # establish the wavelength range to be used
         ys, xs = hdu[1].data.shape[1:]
@@ -77,6 +97,9 @@ def specpolextract_sc(infilelist,yoffo,dyasec,logfile):
    
         write_spectra(w, sci_list, var_list, bad_list,  hdu[0].header, wbin, 'e' + img)
 
+        print 'e'+img,"  yo,ye,dy: ",yo_o,dy  
+        print >>log, 'e'+img," yo,ye,dy: ",yo_o,dy
+        log.flush
 
 def extract(data, var, mask, wave, y1, y2, wmin, wmax, wbin):
     """Extract the spectra
