@@ -297,7 +297,7 @@ def wave_map(dbfilename, edgerow_d, rows, cols, ystart, order=3, log=None):
     if cofrows < 5:
     # assume this is short MOS slit: use ystart solution for all rows, undo the slit edge settings
         log.message('FEW DATABASE ROWS, ASSUME MOS, USE START' , with_header=False)                    
-        legcof_l = legcof_lY[:,legy_Y==ystart].ravel()
+        legcof_l = legcof_lY[:,legy_Y.astype(int)==ystart].ravel()
         wavmap_yc = np.tile(np.polynomial.legendre.legval(np.arange(-cols/2,cols/2),legcof_l)[:,None],rows/2).T
         edgerow_d = 0,rows/2
         cofrows = 1
