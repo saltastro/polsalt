@@ -240,7 +240,7 @@ def create_raw_stokes_file(first_pair_file, second_pair_file, output_file, wppat
     # difference: defined as 0.5 * ( (o1 - o2)/(o1+o2) - (e1-e2)/(e1+e2))
     stokes_sw[1, wok] = 0.5 * ((sci_fow[0, 1, wok] - sci_fow[1, 1, wok]) / (sci_fow[0, 1, wok] + sci_fow[1, 1, wok])
                                - (sci_fow[0, 0, wok] - sci_fow[1, 0, wok]) / (sci_fow[0, 0, wok] + sci_fow[1, 0, wok]))
-    var_sw[1, wok] = 0.5 * ((var_fow[0, 1, wok] + var_fow[1, 1, wok]) / (sci_fow[0, 1, wok] + sci_fow[1, 1, wok]) ** 2
+    var_sw[1, wok] = 0.25 * ((var_fow[0, 1, wok] + var_fow[1, 1, wok]) / (sci_fow[0, 1, wok] + sci_fow[1, 1, wok]) ** 2
                             + (var_fow[0, 0, wok] + var_fow[1, 0, wok]) / (sci_fow[0, 0, wok] + sci_fow[1, 0, wok]) ** 2)
 
     stokes_sw[1] *= stokes_sw[0]

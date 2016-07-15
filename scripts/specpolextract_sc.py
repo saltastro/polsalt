@@ -22,33 +22,36 @@ def specpolextract_sc(infilelist,yoffo,dyasec,logfile):
 
     # first estimate image tilt
     tilt_i = np.full(len(infilelist),np.nan)
+    filestocorrect = 0
 
     for i,img in enumerate(infilelist):
         if (os.path.exists('c' + img)): continue
         hdu = pyfits.open(img)
-        if hdu[0].header['CCDTYPE'] == 'ARC': continue 
+        if hdu[0].header['CCDTYPE'] == 'ARC': continue
+        filestocorrect += 1 
         rows, cols = hdu['SCI'].data[0].shape
         cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")] 
         col_c = np.arange(3*cols/16,5*cols/16) + (cols/2)*np.arange(2)[:,None]
         y_oc = np.zeros((2,2))
         for o,c in np.ndindex(2,2):     
             y_oc[o,c] = np.median(hdu['SCI'].data[o,:,col_c[c]].sum(axis=0).argsort()[-17:])
-        tilt_i[i] = 2*cbin*(y_oc.mean(axis=0)[0]-y_oc.mean(axis=0)[1])
-        print img,": image tilt: ",tilt_i[i]
-        print >>log,img,": image tilt: ",tilt_i[i]
+        tilt_i[i] = int(2*cbin*(y_oc.mean(axis=0)[0]-y_oc.mean(axis=0)[1]))
+        print img,": image tilt: ",int(tilt_i[i])
+        print >>log,img,": image tilt: ",int(tilt_i[i])
 
-    tilt = np.median(tilt_i[~np.isnan(tilt_i)])
-    print "Median image tilt (cw,total,pixels): ",tilt
-    print >>log,"Median image tilt (cw,total,pixels): ",tilt
-    log.flush
+    if filestocorrect:
+        tilt = np.median(tilt_i[~np.isnan(tilt_i)])
+        print "Median image tilt (cw,total,pixels): ",tilt
+        print >>log,"Median image tilt (cw,total,pixels): ",tilt
+        log.flush
         
     # straighten out the spectra
-    for img in infilelist:
-        if (os.path.exists('c' + img)): continue
-        hdu=correct_files(pyfits.open(img),tilt=tilt)
-        hdu.writeto('c' + img, clobber=True)
-        print 'c' + img
-        print >>log,'c' + img
+        for img in infilelist:
+            if (os.path.exists('c' + img)): continue
+            hdu=correct_files(pyfits.open(img),tilt=tilt)
+            hdu.writeto('c' + img, clobber=True)
+            print 'c' + img
+            print >>log,'c' + img
 
     infilelist = sorted(glob.glob('cw*fits'))
     for img in infilelist:
@@ -127,11 +130,11 @@ def extract(data, var, mask, wave, y1, y2, wmin, wmax, wbin):
     wmask = ((wave[y0] > wmin) * (wave[y0] < wmax))
 
     #compute correction to preserve flux
-    dwave = wave[y0,1:]-wave[y0,:-1]
-    wavemean = wave[y0].mean()
-    dwavemean = dwave.mean()
-    dwavpoly = np.polyfit(wave[y0,1:]-wavemean,dwave-dwavemean,3)
-    fluxcor = np.polyval(dwavpoly,w-wavemean) + dwavemean
+    Wave = wave[y0,wmask]
+    dWave = Wave[1:]-Wave[:-1]
+    dWave = np.append(dWave,dWave[-1])
+    dwavpoly = np.polyfit(Wave-Wave.mean(),dWave-dWave.mean(),3)
+    fluxcor = (np.polyval(dwavpoly,w-Wave.mean()) + dWave.mean())/wbin
 
     #estimate the sky
     s = np.zeros_like(w)
