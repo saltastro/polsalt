@@ -1,8 +1,11 @@
 import os
 import numpy as np
 
-from saltobslog import obslog
 from astropy.table import Table
+
+from pyraf import iraf
+from iraf import pysalt
+from saltobslog import obslog
 
 DATADIR = os.path.dirname(__file__) + '/data/'
 
