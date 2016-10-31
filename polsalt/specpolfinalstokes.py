@@ -1,4 +1,5 @@
-pecpolfinalstokes
+"""
+specpolfinalstokes
 Correct raw stokes for track, combine, and calibrate to form final stoes.
 """
 
