@@ -55,7 +55,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
         files = len(infilelist)
         allrawlist = []
         for i in range(files):
-            object,config,wvplt,cycle = os.path.basename(infilelist[i]).split('.')[0].rsplit('_',4)
+            object,config,wvplt,cycle = os.path.basename(infilelist[i]).rsplit('.',1)[0].rsplit('_',3)
             if (config[0]!='c')|(wvplt[0]!='h')|(not cycle.isdigit()):
                 log.message('File '+infilelist[i]+' is not a raw stokes file.'  , with_header=False) 
                 continue
@@ -127,7 +127,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                 else:
                     if rawlist[j-1][1:4] != rawlist[j][1:4]: cycles = 1
                     else: cycles += 1
-                wppat = pyfits.getheader(infilelist[i],0)['WPPATERN']
+                wppat = pyfits.getheader(infilelist[i],0)['WPPATERN'].upper()
                 dwav = pyfits.getheader(infilelist[i],'SCI')['CDELT1']
                 stokes_jsw[j] = pyfits.open(infilelist[i])['SCI'].data[:,:,col1:col1+cols].reshape((2,-1))
                 var_jsw[j] = pyfits.open(infilelist[i])['VAR'].data[:,:,col1:col1+cols].reshape((2,-1))
@@ -196,7 +196,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
             # fallback for incomplete Linear-Hi
                 wppat_fallback = ''
                 if pairs != patternpairs[wppat]:
-                    if (wppat<>'Linear-Hi')|(pairs<2):
+                    if (wppat<>'LINEAR-HI')|(pairs<2):
                         log.message('  Not a complete pattern, skipping observation', with_header=False)
                         continue
                     else:
@@ -208,9 +208,9 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                             k += pairs-2
                         pairs = 2
                         cycles_K = np.array([comblist[i][4] for i in range(k,k+pairs)])
-                        if wppat_fallback: wppat = 'Linear-'+wppat_fallback
-                        if wppat != 'Linear-Hi':
-                            log.message('  Linear-Hi pattern truncated, using '+wppat, with_header=False)
+                        if wppat_fallback: wppat = 'LINEAR-'+wppat_fallback
+                        if wppat != 'LINEAR-HI':
+                            log.message('  LINEAR-HI pattern truncated, using '+wppat, with_header=False)
                         else:
                             log.message('  Not a complete pattern, skipping observation', with_header=False)
 
@@ -233,17 +233,17 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                 stokes_fw[0] = stokes_ksw[k:k+pairs,0].sum(axis=0)/pairs
                 var_fw[0] = var_ksw[k:k+pairs,0].sum(axis=0)/pairs**2        
             # now, the polarization stokes
-                if wppat.count('Linear'):
+                if wppat.count('LINEAR'):
                     var_fw = np.vstack((var_fw,np.zeros(cols)))           # add QU covariance
-                    if (wppat=='Linear') | (wppat=='Linear-0426') | (wppat=='Linear-1537'):
+                    if (wppat=='LINEAR') | (wppat=='LINEAR-0426') | (wppat=='LINEAR-1537'):
                         stokes_fw[1:,ok_w] = stokes_ksw[k:k+2,1,ok_w]*(stokes_fw[0,ok_w]/stokes_ksw[k:k+2,0,ok_w])
                         var_fw[1:3,ok_w] = var_ksw[k:k+2,1,ok_w]*(stokes_fw[0,ok_w]/stokes_ksw[k:k+2,0,ok_w])**2
-                        if wppat=='Linear-1537':
+                        if wppat=='LINEAR-1537':
                             stokes_fw[1:] = (stokes_fw[1] + np.array([-1,1])[:,None]*stokes_fw[2])/np.sqrt(2.)
                             var_fw[3] =   (var_fw[1] - var_fw[2])/2.
                             var_fw[1:3] = (var_fw[1] + var_fw[2])/2.
 
-                    elif wppat=='Linear-Hi':
+                    elif wppat=='LINEAR-HI':
                     # for Linear-Hi, must go to normalized stokes in order for the pair combination to cancel systematic errors
                         nstokes_pw = np.zeros((pairs,cols)); nvar_pw = np.zeros((pairs,cols))
                         nstokes_fw = np.zeros((finstokes,cols)); nvar_fw = np.zeros((finstokes+1,cols))
