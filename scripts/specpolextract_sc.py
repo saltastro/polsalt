@@ -35,6 +35,8 @@ def specpolextract_sc(infilelist,yoffo,dyasec,logfile):
         y_oc = np.zeros((2,2))
         for o,c in np.ndindex(2,2):     
             y_oc[o,c] = np.median(hdu['SCI'].data[o,:,col_c[c]].sum(axis=0).argsort()[-17:])
+        print y_oc
+        exit()
         tilt_i[i] = int(2*cbin*(y_oc.mean(axis=0)[0]-y_oc.mean(axis=0)[1]))
         print img,": image tilt: ",int(tilt_i[i])
         print >>log,img,": image tilt: ",int(tilt_i[i])
@@ -165,18 +167,18 @@ def write_spectra(wave, sci_ow, var_ow, badbin_ow, header, wbin, outfile):
     """Write out the spectra in the correct format
 
     """
-    header.update('VAREXT',2)
-    header.update('BPMEXT',3)
-    header.update('CRVAL1',wave[0]+wbin/2.)  # this needs to be fixed
-    header.update('CRVAL2',0)
-    header.update('CDELT1',wbin)  # this needs to be fixed
-    header.update('CTYPE1','Angstroms')
+    header['VAREXT'] = 2
+    header['BPMEXT'] = 3
+    header['CRVAL1'] = wave[0]+wbin/2.  # this needs to be fixed
+    header['CRVAL2'] = 0
+    header['CDELT1'] = wbin             # this needs to be fixed
+    header['CTYPE1'] = 'Angstroms'
     hduout = pyfits.PrimaryHDU(header=header)
     hduout = pyfits.HDUList(hduout)
 
     #what's the initial shape? 
     hduout.append(pyfits.ImageHDU(data=sci_ow, header=header, name='SCI'))
-    header.update('SCIEXT',1,'Extension for Science Frame',before='VAREXT')
+    header.set('SCIEXT',1,'Extension for Science Frame',before='VAREXT')
     hduout.append(pyfits.ImageHDU(data=var_ow, header=header, name='VAR'))
     hduout.append(pyfits.ImageHDU(data=badbin_ow, header=header, name='BPM'))
 

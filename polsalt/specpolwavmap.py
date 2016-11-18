@@ -9,7 +9,7 @@ Split O and E and produce wavelength map for spectropolarimetric data
 import os, sys, glob, shutil, inspect
 
 import numpy as np
-import pyfits
+from astropy.io import fits as pyfits
 from scipy.interpolate import interp1d
 from scipy.ndimage.interpolation import shift
 from scipy import linalg as la
@@ -79,8 +79,8 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
 
             # some housekeeping for bad keywords
             if hduarc[0].header['MASKTYP'].strip() == 'MOS':   # for now, MOS treated as single, short 1 arcsec longslit
-                hduarc[0].header.update('MASKTYP','LONGSLIT')
-                hduarc[0].header.update('MASKID','P001000P99')
+                hduarc[0].header['MASKTYP'] = 'LONGSLIT'
+                hduarc[0].header['MASKID'] = 'P001000P99'
             del hduarc['VAR']
             del hduarc['BPM']
     
@@ -105,7 +105,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
                 hdu, splitrow = specpolsplit(hdu, splitrow=splitrow)
                 hdu['BPM'].data[wavmap_orc==0.] = 1 
                 hdu.append(hduwav)
-                for f in ('SCI','VAR','BPM','WAV'): hdu[f].header.update('CTYPE3','O,E')
+                for f in ('SCI','VAR','BPM','WAV'): hdu[f].header['CTYPE3'] = 'O,E'
                 hdu.writeto('w'+image,clobber='True')
                 log.message('Output file '+'w'+image, with_header=False)
 
