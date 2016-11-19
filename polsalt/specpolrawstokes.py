@@ -13,7 +13,7 @@ import shutil
 import inspect
 
 import numpy as np
-import pyfits
+from astropy.io import fits as pyfits
 
 from scipy.interpolate import interp1d
 from pyraf import iraf
@@ -250,13 +250,13 @@ def create_raw_stokes_file(first_pair_file, second_pair_file, output_file, wppat
     hduout = pyfits.PrimaryHDU(header=hdulist[0].header)
     hduout = pyfits.HDUList(hduout)
     if wppat:
-        hduout[0].header.update('WPPATERN', wppat)
+        hduout[0].header['WPPATERN'] = wppat
     header = hdulist['SCI'].header.copy()
-    header.update('VAREXT', 2)
-    header.update('BPMEXT', 3)
-    header.update('CTYPE3', 'I,S')
+    header['VAREXT'] =  2
+    header['BPMEXT'] =  3
+    header['CTYPE3'] =  'I,S'
     hduout.append( pyfits.ImageHDU( data=stokes_sw.reshape( (2, 1, wavs)), header=header, name='SCI'))
-    header.update('SCIEXT', 1, 'Extension for Science Frame', before='VAREXT')
+    header.set('SCIEXT', 1, 'Extension for Science Frame', before='VAREXT')
     hduout.append( pyfits.ImageHDU( data=var_sw.reshape( (2, 1, wavs)), header=header, name='VAR'))
     hduout.append( pyfits.ImageHDU( data=bpm_sw.reshape( (2, 1, wavs)), header=header, name='BPM'))
 

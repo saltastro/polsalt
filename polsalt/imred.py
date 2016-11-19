@@ -167,8 +167,8 @@ def imred(infilelist, prodir, bpmfile=None, gaindb = None, cleanup=True):
     for img in infilelist:
         filename = 'mxgbp'+os.path.basename(img)
         hdu = pyfits.open(filename, 'update')
-        hdu[2].header.update('EXTNAME','VAR')
-        hdu[3].header.update('EXTNAME','BPM')
+        hdu[2].header['EXTNAME'] = 'VAR'
+        hdu[3].header['EXTNAME'] = 'BPM'
         bpm_rc = (hdu[3].data>0).astype('uint8')
         zeroscicol = hdu['SCI'].data.sum(axis=0) == 0
         bpmgapcol = bpm_rc.mean(axis=0) == 1
@@ -213,16 +213,16 @@ def add_variance(struct, badpixelstruct):
     nextend=nsciext
     for i in range(1, nsciext+1):
         hdu=CreateVariance(struct[i], i, nextend+i)
-        hdu.header.update('EXTNAME','VAR')
-        struct[i].header.update('VAREXT',nextend+i, comment='Extension for Variance Frame')
+        hdu.header['EXTNAME'] = 'VAR'
+        struct[i].header['VAREXT'] = (nextend+i, 'Extension for Variance Frame')
         struct.append(hdu)
     nextend+=nsciext
     for i in range(1, nsciext+1):
         hdu=masterbadpixel(struct, badpixelstruct, i, nextend+i)
-        struct[i].header.update('BPMEXT',nextend+i, comment='Extension for Bad Pixel Mask')
+        struct[i].header['BPMEXT'] = (nextend+i, 'Extension for Bad Pixel Mask')
         struct.append(hdu)
     nextend+=nsciext
-    struct[0].header.update('NEXTEND', nextend)
+    struct[0].header['NEXTEND'] = nextend
     return struct 
 
 
@@ -254,8 +254,8 @@ def masterbadpixel(inhdu, bphdu, sci_ext, bp_ext):
             data = bin_rc[ r1:r1+rows, c1:c1+cols ].astype('uint8')
         
     header=inhdu[sci_ext].header.copy()
-    header.update('EXTVER',bp_ext)
-    header.update('SCIEXT',sci_ext,comment='Extension of science frame')
+    header['EXTVER'] = bp_ext
+    header['SCIEXT'] = (sci_ext,'Extension of science frame')
 
     return pyfits.ImageHDU(data=data, header=header, name='BPM')
 

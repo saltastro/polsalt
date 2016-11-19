@@ -294,21 +294,20 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                     infile = infilelist[rawlist[comblist[k][0]][0]]
                     hduout = pyfits.open(infile)
                     hduout['SCI'].data = stokes_fw.astype('float32').reshape((3,1,-1))
-                    hduout['SCI'].header.update('CTYPE3','I,Q,U')
+                    hduout['SCI'].header['CTYPE3'] = 'I,Q,U'
                     hduout['VAR'].data = var_fw.astype('float32').reshape((4,1,-1))
-                    hduout['VAR'].header.update('CTYPE3','I,Q,U,QU')
+                    hduout['VAR'].header['CTYPE3'] = 'I,Q,U,QU'
 
                     hduout['BPM'].data = bpm_fw.astype('uint8').reshape((3,1,-1))
-                    hduout['BPM'].header.update('CTYPE3','I,Q,U')
+                    hduout['BPM'].header['CTYPE3'] = 'I,Q,U'
 
-                    hduout[0].header.update('WPPATERN',wppat)
-                    hduout[0].header.update('PATYPE',pacaltype)
+                    hduout[0].header['WPPATERN'] = wppat
+                    hduout[0].header['PATYPE'] = pacaltype
                     if len(calhistorylist): 
                         hduout[0].header.add_history('POLCAL: '+' '.join(calhistorylist))
 
                     if len(chisqlist[obs]): 
-                        hduout[0].header.update('SYSERR',100.*syserr, \
-                            'estimated % systematic error')
+                       hduout[0].header['SYSERR'] = (100.*syserr,'estimated % systematic error')
                     
                     outfile = obsname+'_'+wppat_fallback+'stokes.fits'
                     hduout.writeto(outfile,clobber=True,output_verify='warn')
