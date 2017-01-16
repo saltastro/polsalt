@@ -1,11 +1,8 @@
 import os
 import numpy as np
 
-from astropy.table import Table
-
-from pyraf import iraf
-from iraf import pysalt
 from saltobslog import obslog
+from astropy.table import Table
 
 DATADIR = os.path.dirname(__file__) + '/data/'
 
@@ -113,6 +110,7 @@ def list_configurations(infilelist, log):
                      (obs_tab['CAMANG']==camang) *
                      (obs_tab['BVISITID']==blockvisit)
                )
+
         objtype = obs_tab['CCDTYPE']          # kn changed from OBJECT: CCDTYPE lists ARC consistently
         image_dict['arc'] = infilelist[mask * (objtype == 'ARC')]
 
@@ -128,7 +126,9 @@ def list_configurations(infilelist, log):
             
         image_dict['flat'] = infilelist[mask * (objtype == 'FLAT')]
         image_dict['object'] = infilelist[mask * (objtype != 'ARC') *  (objtype != 'FLAT')]
-        config_dict[(grating, grtilt, camang)] = image_dict
+        if len(image_dict['object']) == 0: continue
+        config_dict[(grating, grtilt, camang, blockvisit)] = image_dict
+
     return config_dict
 
 def configmap(obs_tab, config_list=('GRATING','GR-ANGLE', 'CAMANG')):
