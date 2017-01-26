@@ -1,0 +1,14 @@
+#WS: RSS model wavelength solution
+#Only dummy parameters needed for guessfile
+#name=NA
+#time-obs=2016-12-21 20:19:43.941
+#instrument=RSS
+#grating=NA
+#graang=0
+#gratilt=0
+#arang=0
+#artilt=0
+#filter=NA
+#Function=legendre
+#Order=3
+#Starting Data

@@ -1,7 +1,8 @@
-Ar    Argon_lores.salt
-CuAr    CuAr.salt
-HgAr    HgAr.salt
-Ne    NeAr.salt
-sky    sky.salt
-ThAr    ThAr.salt
-Xe    Xe.salt
+Ar 3850  Argon_3850_0300.txt
+Ar 4600  Argon_4600_0300.txt
+CuAr 0   CuAr.salt
+HgAr 0   HgAr.salt
+Ne   0   NeAr.salt
+sky  0   sky.salt
+ThAr 0   ThAr.salt
+Xe   0   Xe.salt

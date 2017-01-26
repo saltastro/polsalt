@@ -7,6 +7,7 @@ Split O and E and produce wavelength map for spectropolarimetric data
 """
 
 import os, sys, glob, shutil, inspect
+from collections import defaultdict
 
 import numpy as np
 from astropy.io import fits as pyfits
@@ -54,6 +55,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             grating = hduarc[0].header['GRATING'].strip()
             grang = hduarc[0].header['GR-ANGLE']
             artic = hduarc[0].header['CAMANG']
+            filter = hduarc[0].header['FILTER'].strip()
 
             cbin, rbin = [int(x) for x in hduarc[0].header['CCDSUM'].split(" ")]
 
@@ -62,20 +64,31 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
 
             #split the arc into the two beams
             hduarc, splitrow = specpolsplit(hduarc, splitrow=None, wollaston_file=datadir+"wollaston.txt")
-            
-            # set up the linelamp to be used
-            if len(linelistlib) ==0: 
-                linelistlib=datadir+"linelistlib.txt"   
-                if grating=="PG0300": 
-                    linelistlib=datadir+"linelistlib_300.txt"
-            with open(linelistlib) as fd:
-                linelistdict = dict(line.strip().split(None, 1) for line in fd)  
 
-    
             #set up the lamp to be used
             lamp=hduarc[0].header['LAMPID'].strip().replace(' ', '')
             if lamp == 'NONE': lamp='CuAr'
-            lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])    
+            
+            # set up the linelist to be used
+            if len(linelistlib):                # if linelistlib specified, use salt-supplied
+                with open(linelistlib) as fd:
+                    linelistdict = dict(line.strip().split(None, 1) for line in fd)
+                lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp]) 
+            else:                               # else, use line lists in polarimetry area for 300l
+                if grating=="PG0300": 
+                    linelistlib=datadir+"linelistlib_300.txt"
+                    lib_lf = list(np.loadtxt(linelistlib,dtype=str,usecols=(0,1,2)))    # lamp,filter,file
+                    linelistdict = defaultdict(dict)
+                    for ll in range(len(lib_lf)):
+                        linelistdict[lib_lf[ll][0]][int(lib_lf[ll][1])] = lib_lf[ll][2] 
+                    filter_l = np.sort(np.array(linelistdict[lamp].keys()))
+                    usefilter = filter_l[np.where(int(filter[-5:-1]) < filter_l)[0][0]]
+                    lampfile = datadir+linelistdict[lamp][usefilter]
+                else:
+                    linelistlib=datadir+"linelistlib.txt"
+                    with open(linelistlib) as fd:
+                        linelistdict = dict(line.strip().split(None, 1) for line in fd)   
+                    lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])  
 
             # some housekeeping for bad keywords
             if hduarc[0].header['MASKTYP'].strip() == 'MOS':   # for now, MOS treated as single, short 1 arcsec longslit
@@ -159,13 +172,22 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
     arc_orc =  hduarc[1].data
     cbin, rbin = [int(x) for x in hduarc[0].header['CCDSUM'].split(" ")]
     axisrow_o = np.array([rows/4.0, rows/4.0]).astype(int)
+    grating = hduarc[0].header['GRATING'].strip()
+    grang = hduarc[0].header['GR-ANGLE']
+    artic = hduarc[0].header['CAMANG']    
 
     #set up some output arrays
     wavmap_orc = np.zeros((2,rows/2.0,cols))
     edgerow_od = np.zeros((2,2))
     cofrows_o = np.zeros(2)
     legy_od = np.zeros((2,2))
-    guessfile=None
+
+    lam_X = rssmodelwave(grating,grang,artic,cbin,cols)
+    np.savetxt("lam_X_60.txt",lam_X,fmt="%8.3f")
+    C_f = np.polyfit(np.arange(cols),lam_X,3)
+    dbhdr = open(datadir+"arcdb_guesshdr.txt").readlines()
+    guessfile="wavguess_"+str(image_no)+".txt"
+    open(guessfile,'w').writelines(dbhdr+[("0.0 "+4*"%12.5e ") % tuple(C_f[::-1])])
 
     for o in (0,1):
 
@@ -183,18 +205,14 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
         if np.abs(edgerow_od[o] - np.array([0,rows/2-1])).min() < maxoverlaprows:
             edgerow_od[o] += maxoverlaprows*np.array([+1,-1])
 
-        #wrtite out temporary image to run specidentify
+        #write out temporary image to run specidentify
         hduarc['SCI'].data = arc_yc
         arcimage = "arc_"+str(image_no)+"_"+str(o)+".fits"
         dbfilename = "arcdb_"+str(image_no)+"_"+str(o)+".txt"
         ystart = axisrow_o[o]
 
         if (not os.path.exists(dbfilename)):
-            if guessfile is not None:
-                guesstype = 'file'
-            else:
-                guessfile=dbfilename
-                guesstype = 'rss'
+            guesstype = 'file'
             hduarc.writeto(arcimage,clobber=True)
                  
             specidentify(arcimage, lampfile, dbfilename, guesstype=guesstype,

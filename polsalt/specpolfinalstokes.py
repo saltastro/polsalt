@@ -1,6 +1,9 @@
+
 """
 specpolfinalstokes
+
 Correct raw stokes for track, combine, and calibrate to form final stoes.
+
 """
 
 import os, sys, glob, shutil, inspect
@@ -25,12 +28,15 @@ np.set_printoptions(threshold=np.nan)
 def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
         HW_Cal_override=False,Linear_PolZeropoint_override=False,PAZeropoint_override=False):
     """Combine the raw stokes and apply the polarimetric calibrations
+
     Parameters
     ----------
     infilelist: list
         List of filenames that include an extracted spectrum
+
     logfile: str
         Name of file for logging
+
     """
     """
     _l: line in calibration file
@@ -63,9 +69,9 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
         configlist = sorted(list(set(ele[2] for ele in allrawlist)))       # unique configs
 
     # input calibration files
-        dateobs = obsdict['DATE-OBS'][0].strip('-')
+        dateobs = obsdict['DATE-OBS'][0].replace('-','')
         HWCalibrationfile = datedfile(datadir+"RSSpol_HW_Calibration_yyyymmdd.txt",dateobs)
-        hwav_l,heff_l,hpa_l = np.loadtxt(HWCalibrationfile,dtype=float,unpack=True,ndmin=2)
+        hwav_l,heff_l,hpa_l = np.loadtxt(HWCalibrationfile,dtype=float,unpack=True,usecols=(0,1,2),ndmin=2)
         PolZeropointfile = datedfile(datadir+"RSSpol_Linear_PolZeropoint_yyyymmdd.txt",dateobs)
         iwav_l,iq0_l,iu0_l = np.loadtxt(PolZeropointfile,dtype=float,unpack=True,ndmin=2)
         tdate_l,t0_l = np.loadtxt(datadir+"RSSpol_Linear_PAZeropoint.txt",dtype=float,unpack=True,ndmin=2)
@@ -104,13 +110,8 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
             rawlist = [entry for entry in allrawlist if entry[2]==conf]
             for col in (4,3,1,2): rawlist = sorted(rawlist,key=operator.itemgetter(col))            
             rawstokes = len(rawlist)            # rawlist is sorted with cycle varying fastest
-        # using overlapping wavelengths
-            wav0list = [pyfits.getheader(infilelist[i],'SCI')['CRVAL1'] for i in range(rawstokes)]
-            colslist = [pyfits.open(infilelist[rawlist[i][0]])['SCI'].data.shape[-1] \
-                for i in range(rawstokes)]
-            wav0 = max(wav0list)
-            col1 = wav0list.index(wav0)
-            cols = min(colslist) - col1
+            wav0 = pyfits.getheader(infilelist[rawlist[0][0]],'SCI')['CRVAL1']
+            cols = pyfits.getheader(infilelist[rawlist[0][0]],'SCI')['NAXIS1']            
         # get data
             stokes_jsw = np.zeros((rawstokes,2,cols)) 
             var_jsw = np.zeros_like(stokes_jsw); bpm_jsw = np.zeros_like(stokes_jsw).astype(int)
@@ -129,47 +130,51 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                     else: cycles += 1
                 wppat = pyfits.getheader(infilelist[i],0)['WPPATERN'].upper()
                 dwav = pyfits.getheader(infilelist[i],'SCI')['CDELT1']
-                stokes_jsw[j] = pyfits.open(infilelist[i])['SCI'].data[:,:,col1:col1+cols].reshape((2,-1))
-                var_jsw[j] = pyfits.open(infilelist[i])['VAR'].data[:,:,col1:col1+cols].reshape((2,-1))
-                bpm_jsw[j] = pyfits.open(infilelist[i])['BPM'].data[:,:,col1:col1+cols].reshape((2,-1))
+                stokes_jsw[j] = pyfits.open(infilelist[i])['SCI'].data.reshape((2,-1))
+                var_jsw[j] = pyfits.open(infilelist[i])['VAR'].data.reshape((2,-1))
+                bpm_jsw[j] = pyfits.open(infilelist[i])['BPM'].data.reshape((2,-1))
                 wav_jw[j] = wav0 + dwav*np.arange(cols)
                 if cycles==1:
                     comblist.append((j,object,config,wvplt,cycles,wppat))
                 else:
                     comblist[-1] = (j,object,config,wvplt,cycles,wppat)
 
-        # combine cycles (cycles > 1)
             combstokes = len(comblist)
             stokes_ksw = np.zeros((combstokes,2,cols)) 
             var_ksw = np.zeros_like(stokes_ksw)
-            bpm_ksw = np.zeros_like(stokes_ksw).astype(int)
+            cycles_kw = np.zeros((combstokes,cols)).astype(int)
             wav_kw = np.zeros((combstokes,cols))
             chisqstokes_kw = np.zeros_like(wav_kw)
             obslist = []
             obsobject = ''
             obsconfig = ''
             chisqlist = [[]]
+        # combine multiple cycles as necessary.  Absolute stokes is on a per cycle basis.
             for k in range(combstokes):         
                 j,object,config,wvplt,cycles,wppat = comblist[k]
-                stokes_ksw[k] =  stokes_jsw[j-cycles+1:j+1].sum(axis=0) 
-                var_ksw[k] =  var_jsw[j-cycles+1:j+1].sum(axis=0)   
-                bpm_ksw[k] =  bpm_jsw[j-cycles+1:j+1].sum(axis=0).astype(int)
                 wav_kw[k] = wav_jw[j]
+                cycles_kw[k] =  (1-bpm_jsw[j-cycles+1:j+1,0]).sum(axis=0).astype(int)
+                ok_w = (cycles_kw[k] > 0)
+                stokes_ksw[k] = stokes_jsw[j-cycles+1:j+1].sum(axis=0)
+                var_ksw[k] = var_jsw[j-cycles+1:j+1].sum(axis=0)
+                stokes_ksw[k,:,ok_w] /= cycles_kw[k,None,ok_w] 
+                var_ksw[k,:,ok_w] /= cycles_kw[k,None,ok_w]**2
 
-            # compute chisq/dof for multiple cycles
+            # compute chisq/dof for multiple cycles. Use wavelengths where all cycles are good
+                okall_w = (cycles_kw[k] == cycles)
                 if cycles > 1:
                     nstokes_w = np.zeros(cols)
-                    okchi = (bpm_ksw[k,1] == 0)                     # use waves where all cycles are good 
-                    nstokes_w[okchi] = stokes_ksw[k,1,okchi]/stokes_ksw[k,0,okchi]
+                    nstokes_w[okall_w] = stokes_ksw[k,1,okall_w]/stokes_ksw[k,0,okall_w]
 
                     for jj in range(j-cycles+1,j+1):
                         nstokesj_w = np.zeros(cols)  
                         nerrstokesj_w = np.zeros_like(nstokesj_w)
-                        nstokesj_w[okchi] = stokes_jsw[jj,1,okchi]/stokes_jsw[jj,0,okchi]
-                        nerrstokesj_w[okchi] =  np.sqrt(var_jsw[jj,1,okchi]/(stokes_jsw[jj,0,okchi])**2)
-                        chisqstokes_kw[k,okchi] += ((nstokesj_w[okchi]-nstokes_w[okchi])/nerrstokesj_w[okchi])**2
+                        nstokesj_w[okall_w] = stokes_jsw[jj,1,okall_w]/stokes_jsw[jj,0,okall_w]
+                        nerrstokesj_w[okall_w] =  np.sqrt(var_jsw[jj,1,okall_w]/(stokes_jsw[jj,0,okall_w])**2)
+                        chisqstokes_kw[k,okall_w] += \
+                            ((nstokesj_w[okall_w]-nstokes_w[okall_w])/nerrstokesj_w[okall_w])**2
                     chisqstokes_kw[k] /= cycles-1
-                    chisqstokes = chisqstokes_kw[k].sum()/okchi.sum()
+                    chisqstokes = chisqstokes_kw[k].sum()/okall_w.sum()
                     chisqlist[-1].append(chisqstokes)
                     log.message("  Chisq/dof Waveplate Position Pair %s: %7.2f" \
                                     % (wvplt,chisqstokes), with_header=False)
@@ -216,16 +221,15 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
 
                 stokes_fw = np.zeros((finstokes,cols))
                 var_fw = np.zeros_like(stokes_fw)
-                ok_fw = (bpm_ksw[k:k+pairs] < cycles_K[:,None,None]).sum(axis=0) == pairs
-                ok_w = ok_fw.all(axis=0)    # use wavelengths with all pairs having good data in at least one cycle
+            # evaluate wavelengths with all pairs having good, calibratable data in at least one cycle
+                okcal_w = (wav_kw[k]>hwav_l.min()) & (wav_kw[k]<hwav_l.max()) | HW_Cal_override 
+                ok_w = okcal_w & (cycles_kw[k:k+pairs] > 0).all(axis=0) 
                 bpm_fw = np.repeat((np.logical_not(ok_w))[None,:],finstokes,axis=0)
 
-            # normalize pairs at matching wavelengths _W: 
-            # compute ratios at each wavelength, then error-weighted mean of ratio
-                normint_KW = stokes_ksw[k:k+pairs,0,ok_w]/stokes_ksw[k:k+pairs,0,ok_w].mean(axis=0)
-                varnorm_KW = var_ksw[k:k+pairs,0,ok_w]/stokes_ksw[k:k+pairs,0,ok_w].mean(axis=0)**2
-                np.savetxt('int_kw.txt',np.vstack((ok_fw,ok_w,wav_kw,stokes_ksw[:,0],var_ksw[:,0])).T,fmt="%10.1f")
-                normint_K = (normint_KW/varnorm_KW).sum(axis=1) / (1./varnorm_KW).sum(axis=1)
+            # normalize pairs in obs at wavelengths _W where all pair/cycles have data:
+                okall_w = okcal_w & (cycles_kw[k:k+pairs] == cycles_K[:,None]).all(axis=0)     
+                normint_K = stokes_ksw[k:k+pairs,0,okall_w].sum(axis=1)
+                normint_K /= np.mean(normint_K)
                 stokes_ksw[k:k+pairs] /= normint_K[:,None,None]
                 var_ksw[k:k+pairs] /= normint_K[:,None,None]**2
 
@@ -259,22 +263,22 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                         nvar_fw[3] = 0.25*((nvar_pw[1] - nvar_pw[3])/2.)
                         stokes_fw[1:] = nstokes_fw[1:]*stokes_fw[0]
                         var_fw[1:] = nvar_fw[1:]*stokes_fw[0]**2
-                        chisqq = ((nstokes_pw[0,ok_w] - nstokes_fw[1,ok_w])**2/nvar_fw[1,ok_w]).sum()/ok_w.sum() 
-                        chisqu = ((nstokes_pw[2,ok_w] - nstokes_fw[2,ok_w])**2/nvar_fw[2,ok_w]).sum()/ok_w.sum()
+                        chisqq = ((nstokes_pw[0,okall_w] - nstokes_fw[1,okall_w])**2/nvar_fw[1,okall_w]).sum()/okall_w.sum() 
+                        chisqu = ((nstokes_pw[2,okall_w] - nstokes_fw[2,okall_w])**2/nvar_fw[2,okall_w]).sum()/okall_w.sum()
                         chisqlist[obs].append(chisqq)
                         chisqlist[obs].append(chisqu)
-                        log.message("    Chisq/dof Linear-Hi Q,U: %7.2f %7.2f" % (chisqq,chisqu), with_header=False) 
+                        log.message("    Chisq/dof LINEAR-HI Q,U: %7.2f %7.2f" % (chisqq,chisqu), with_header=False) 
 
                # calculate, print estimated systematic error from chisq mean
                     if len(chisqlist[obs]):
                         chisqdof = np.array(chisqlist[obs]).mean()
-                        dofs = float(ok_fw[0].sum())
+                        dofs = float(okall_w.sum())
                         chisqdoferr = np.sqrt(2./dofs)
                         syserr = 0.         # estimate systematic error using noncentral chisq distribution
                         if (chisqdof - 1.) > 3.*chisqdoferr:
                             nvar_fw = np.zeros_like(var_fw)
-                            nvar_fw[:,ok_fw[0]] = var_fw[:,ok_fw[0]]/stokes_fw[0,ok_fw[0]]**2
-                            syserr = np.sqrt(dofs*(chisqdof - 1.)/(1./nvar_fw[1,ok_fw[1]]).sum())
+                            nvar_fw[:,okall_w] = var_fw[:,okall_w]/stokes_fw[0,okall_w]**2
+                            syserr = np.sqrt(dofs*(chisqdof - 1.)/(1./nvar_fw[1,okall_w]).sum())
               
                         log.message(("    Mean chisq/dof: %5.2f  Estimated sys %%error: %5.2f") % \
                             (chisqdof,100.*syserr), with_header=False)
@@ -307,26 +311,29 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                         hduout[0].header.add_history('POLCAL: '+' '.join(calhistorylist))
 
                     if len(chisqlist[obs]): 
-                       hduout[0].header['SYSERR'] = (100.*syserr,'estimated % systematic error')
+                        hduout[0].header['SYSERR'] = (100.*syserr,'estimated % systematic error')
                     
                     outfile = obsname+'_'+wppat_fallback+'stokes.fits'
                     hduout.writeto(outfile,clobber=True,output_verify='warn')
                     log.message('\n    '+outfile+' Stokes I,Q,U', with_header=False)
                      
-#               elif wppat.count('Circular'):  TBS 
+#               elif wppat.count('CIRCULAR'):  TBS 
 
-#               elif wppat=='All-Stokes':  TBS
+#               elif wppat=='ALL-STOKES':  TBS
 
     return
         
 # ------------------------------------
 def datedfile(filename,date):
     """ select file based on observation date
+
     Parameters
     ----------
     filename: text file name pattern, including "yyyymmdd" place holder for date
     date: yyyymmdd of observation
+
     Returns: file name
+
     """
 
     filelist = sorted(glob.glob(filename.replace('yyyymmdd','????????')))
@@ -339,29 +346,37 @@ def datedfile(filename,date):
     return file      
 
 # ------------------------------------
-def specpolrotate(stokes_sw,var_sw,par_w):
+def specpolrotate(stokes_sw,var_sw,par_w,normalized=False):
     """ rotate linear polarization in stokes,variance cubes
+
     Parameters
     ----------
     stokes_sw: 2d np array
         _s = I,Q,U,(optional V) unnormalized stokes (size 3, or 4)
         _w = wavelength
-    Var_sw: 2d np array (size 4, or 5)
+    var_sw: 2d np array (size 4, or 5)
         _s = I,Q,U,QU covariance, (optional V) variance for stokes
+    par_w: 1d np array 
+        PA(degrees) to rotate
+    normalized: if True, leave off I
+
     Returns stokes, var (as copy)
+
     """
 
+    Qarg = int(not normalized)
     stokes_fw = np.copy(stokes_sw)
     var_fw = np.copy(var_sw)
     c_w = np.cos(2.*np.radians(par_w)); s_w = np.sin(2.*np.radians(par_w))
-    stokes_fw[1:] = stokes_fw[1]*c_w - stokes_fw[2]*s_w ,    \
-        stokes_fw[1]*s_w + stokes_fw[2]*c_w
-    var_fw[1:3] =  var_fw[1]*c_w**2 + var_fw[2]*s_w**2 ,    \
-        var_fw[1]*s_w**2 + var_fw[2]*c_w**2
-    var_fw[3] =  c_w*s_w*(var_fw[1] - var_fw[2]) + (c_w**2-s_w**2)*var_fw[3]
+    stokes_fw[Qarg:] = stokes_fw[Qarg]*c_w - stokes_fw[Qarg+1]*s_w ,    \
+        stokes_fw[Qarg]*s_w + stokes_fw[Qarg+1]*c_w
+    var_fw[Qarg:Qarg+2] =  var_fw[Qarg]*c_w**2 + var_fw[Qarg+1]*s_w**2 ,    \
+        var_fw[Qarg]*s_w**2 + var_fw[Qarg+1]*c_w**2
+    var_fw[Qarg+2] =  c_w*s_w*(var_fw[Qarg] - var_fw[Qarg+1]) + (c_w**2-s_w**2)*var_fw[Qarg+2]
     return stokes_fw,var_fw
 
 if __name__=='__main__':
     infilelist=[x for x in sys.argv[1:] if x.count('.fits')]
-    kwargs = dict(x.split('=', 1) for x in sys.argv[1:] if x.count('.fits')==0)        
+    kwargs = dict(x.split('=', 1) for x in sys.argv[1:] if x.count('.fits')==0)
+    if len(kwargs): kwargs = {k:bool(v) for k,v in kwargs.iteritems()}        
     specpolfinalstokes(infilelist,**kwargs)
