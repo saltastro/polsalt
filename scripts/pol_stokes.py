@@ -21,8 +21,5 @@ infile_list = sorted(glob.glob('e*fits'))
 specpolrawstokes(infile_list, logfile=logfile)
 
 #final stokes
-#polcal = 'polcal0.txt'                                 # null calibration
-#infile_list = sorted(glob.glob('*_h[0,2]*.fits'))      # subselection 
-polcal = 'polcal.txt'
 infile_list = sorted(glob.glob('*_h*.fits'))
-specpolfinalstokes(infile_list, polcal=polcal, logfile=logfile)
+specpolfinalstokes(infile_list, polcal=polcal)

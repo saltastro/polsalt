@@ -28,13 +28,13 @@ np.set_printoptions(threshold=np.nan)
 debug = True
 
 
-def specpolrawstokes(infile_list, logfile='salt.log'):
+def specpolrawstokes(infilelist, logfile='salt.log'):
     """Produces an unnormalized stokes measurement in intensity from
        a pair of WP filter positions
 
     Parameters
     ----------
-    infile_list: list
+    infilelist: list
         List of filenames that include an extracted spectra
 
     logfile: str
@@ -49,25 +49,22 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
     for the pair measured as a function of wavelength and also includes the variance and bad pixel maps.  The output file is named as the target name_configuration number_wave plate positions_number of repeats.fits
     """
     # set up some files that will be needed
-    obsdate = os.path.basename(infile_list[0]).split('.')[0][-12:-4]
+    obsdate = os.path.basename(infilelist[0]).split('.')[0][-12:-4]
 
     patternfile = open(datadir + 'wppaterns.txt', 'r')
     with logging(logfile, debug) as log:
 
         # create the observation log
-        obs_dict = obslog(infile_list)
-        images = len(infile_list)
+        obs_dict = obslog(infilelist)
+        images = len(infilelist)
 
-        hsta_i = np.array([int(float(s) / 11.25) for s in obs_dict['HWP-ANG']])
-        qsta_i = np.array([int(float(s) / 11.25) for s in obs_dict['QWP-STA']])
+        hsta_i = np.array([int(round(s)) for s in obs_dict['HWP-STA']])
+        qsta_i = np.array([int(round(s)) for s in obs_dict['QWP-STA']])
         img_i = np.array(
-            [int(os.path.basename(s).split('.')[0][-4:]) for s in infile_list])
+            [int(os.path.basename(s).split('.')[0][-4:]) for s in infilelist])
         wpstate_i = [['unknown', 'out', 'qbl', 'hw', 'hqw']
                      [int(s[1])] for s in obs_dict['WP-STATE']]
-        #    wppat_i = obs_dict['WPPATERN']
-        # until WPPATERN is put in obslog
-        wppat_i = ['UNKNOWN' for i in range(images)]
-
+        wppat_i = obs_dict['WPPATERN']
         object_i = obs_dict['OBJECT']
         config_i = np.zeros(images, dtype='int')
         obs_i = -np.ones(images, dtype='int')
@@ -122,19 +119,21 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
 
     # Compute E-O raw stokes
 
+        wav0_i = np.array([pyfits.getheader(infilelist[i],'SCI')['CRVAL1'] for i in range(images)]).astype(float)
+        wavs_i = np.array([pyfits.getheader(infilelist[i],'SCI')['NAXIS1'] for i in range(images)]).astype(int)
         for obs in range(obss):
-            idx_j = np.where(obs_i == obs)
-            i0 = idx_j[0][0]
+            idx_j = np.where(obs_i == obs)[0]
+            i0 = idx_j[0]
             name_n = []
             if wppat_i[i0].count('UNKNOWN'):
                 if (hsta_i[idx_j] % 2).max() == 0:
-                    wppat = "Linear"
+                    wppat = "LINEAR"
                 else:
-                    wppat = "Linear-Hi"
-                for i in idx_j[0]:
+                    wppat = "LINEAR-HI"
+                for i in idx_j:
                     wppat_i[i] = wppat
-            if not(((wpstate_i[i0] == 'hw') & (wppat_i[i0] in ('Linear', 'Linear-Hi'))
-                    | (wpstate_i[i0] == 'hqw') & (wppat_i[i0] in ('Circular', 'Circular-Hi', 'All-Stokes')))):
+            if not(((wpstate_i[i0] == 'hw') & (wppat_i[i0] in ('LINEAR', 'LINEAR-HI'))
+                    | (wpstate_i[i0] == 'hqw') & (wppat_i[i0] in ('CIRCULAR', 'CIRCULAR-HI', 'ALL-STOKES')))):
                 print "Observation", obs, ": wpstate ", wpstate_i[i0], \
                     " and wppattern ", wppat_i[i0], "not consistent"
                 continue
@@ -146,9 +145,15 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
             stokes = 0
             j = -1
 
-            while j < (len(idx_j[0]) - 2):
+        # using overlapping wavelengths
+            dwav = pyfits.getheader(infilelist[idx_j[0]],'SCI')['CDELT1']
+            wav0 = wav0_i[idx_j].max()
+            col1_j = ((wav0_i[idx_j] - wav0)/dwav).astype(int)
+            wavs = (wavs_i[idx_j] - col1_j).min()
+
+            while j < (len(idx_j) - 2):
                 j += 1
-                i = idx_j[0][j]
+                i = idx_j[j]
                 if (wpstate_i[i] == 'hw'):
                     if (np.where(wpat_p[0::2] == hsta_i[i])[0].size > 0):
                         idxp = np.where(wpat_p == hsta_i[i])[0][0]
@@ -164,8 +169,8 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
                     else:
                         continue
 
-                first_pair_file = infile_list[i]
-                second_pair_file = infile_list[i + 1]
+                first_pair_file = infilelist[i]
+                second_pair_file = infilelist[i + 1]
 
                 name = object_i[i] + '_c' + str(config_i[i]) + '_h' + str(hsta_i[i]) + str(hsta_i[i + 1])
                 if (wpstate_i[i] == 'hqw'):
@@ -174,7 +179,7 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
                 count = " ".join(name_n).count(name)
                 name += ('_%02i' % (count + 1))
 
-                create_raw_stokes_file( first_pair_file, second_pair_file,
+                create_raw_stokes_file( first_pair_file, second_pair_file, wav0, wavs,
                     output_file=name + '.fits', wppat=wppat_i[i])
                 log.message('%20s  %1i  %1i %1i %8s %8.2f %8.2f %12s' %
                             (name, obs, rbin, cbin, grating, grang, artic, wppat_i[i]), with_header=False)
@@ -185,7 +190,7 @@ def specpolrawstokes(infile_list, logfile='salt.log'):
     return
 
 
-def create_raw_stokes_file(first_pair_file, second_pair_file, output_file, wppat=None):
+def create_raw_stokes_file(first_pair_file, second_pair_file, wav0, wavs, output_file, wppat=None):
     """Create the raw stokes file.
 
     Parameters
@@ -195,6 +200,9 @@ def create_raw_stokes_file(first_pair_file, second_pair_file, output_file, wppat
 
     second_pair_file: str
        Name of second file in pair for pattern
+
+    wav0,wavs: float,int
+       output file shape
 
     output_file: str
        Name of output file
@@ -208,15 +216,17 @@ def create_raw_stokes_file(first_pair_file, second_pair_file, output_file, wppat
 
     """
 
-    wavs = pyfits.getheader(first_pair_file, 'SCI', 1)['NAXIS1']
     sci_fow = np.zeros((2, 2, wavs))
     var_fow = np.zeros_like(sci_fow)
     bpm_fow = np.zeros_like(sci_fow)
+    dwav = pyfits.getheader(first_pair_file, 'SCI', 1)['CDELT1']
     for f, img in enumerate([first_pair_file, second_pair_file]):
         hdulist = pyfits.open(img)
-        sci_fow[f] = hdulist['sci'].data.reshape((2, -1))
-        var_fow[f] = hdulist['var'].data.reshape((2, -1))
-        bpm_fow[f] = hdulist['bpm'].data.reshape((2, -1))
+        wav0f = pyfits.getheader(img, 'SCI', 1)['CRVAL1']
+        c0 = int((wav0-wav0f)/dwav)
+        sci_fow[f] = hdulist['sci'].data[:,:,c0:c0+wavs].reshape((2, -1))
+        var_fow[f] = hdulist['var'].data[:,:,c0:c0+wavs].reshape((2, -1))
+        bpm_fow[f] = hdulist['bpm'].data[:,:,c0:c0+wavs].reshape((2, -1))
 
   # Mark as bad bins with negative intensities
     bpm_fow[sci_fow < 0] = 1
@@ -254,6 +264,7 @@ def create_raw_stokes_file(first_pair_file, second_pair_file, output_file, wppat
     header = hdulist['SCI'].header.copy()
     header['VAREXT'] =  2
     header['BPMEXT'] =  3
+    header['CRVAL1'] =  wav0
     header['CTYPE3'] =  'I,S'
     hduout.append( pyfits.ImageHDU( data=stokes_sw.reshape( (2, 1, wavs)), header=header, name='SCI'))
     header.set('SCIEXT', 1, 'Extension for Science Frame', before='VAREXT')
