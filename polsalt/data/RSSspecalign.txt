@@ -1,0 +1,5 @@
+# RSS spectrograph alignment constants											
+# date	    Grat0	Home0	ArtErr	T2Con	T3Con	Fcamb	Fcama1	Fcama2	Fcama3	Fcama4	Fcama5
+# yyyymmdd	 deg	 deg				             mm	      mm	  mm	  mm	  mm	  mm
+00000000	1.408	+0.025	-4.2E-5	-5.0	-1.0	328.697	-0.1861	0.5061	-0.2100	0.0365	-0.0023
+20131111	0.000	+0.025	-4.2E-5	-5.0	-1.0	328.697	-0.1861	0.5061	-0.2100	0.0365	-0.0023
