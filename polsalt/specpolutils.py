@@ -6,33 +6,77 @@ from astropy.table import Table
 
 DATADIR = os.path.dirname(__file__) + '/data/'
 
-def rssmodelwave(grating,grang,artic,cbin,cols):
+def rssdtralign(datobs,trkrho):
+    """return predicted RSS optic axis relative to detector center (in unbinned pixels)
+    Correct for flexure, and detector alignment history.
+
+    Parameters 
+    ----------
+    datobs: int
+        yyyymmdd of first data of applicability  
+    trkrho: float
+        tracker rho in degrees
+
+    """
+
+  # optic axis is center of imaging mask.  In columns, same as longslit position
+    label_p=np.loadtxt(DATADIR+"RSSimgalign.txt",usecols=0,dtype=str)
+    rc0_pd=np.loadtxt(DATADIR+"RSSimgalign.txt",usecols=(1,2))
+    flex_p = np.array([np.sin(np.radians(trkrho)),np.cos(np.radians(trkrho))-1.])
+    rcflex_d = (rc0_pd[0:2]*flex_p[:,None]).sum(axis=0)
+
+    for p in range(2,rc0_pd.shape[0]):
+        if datobs < label_p[p]: 
+            d -= 1
+            break
+    row0,col0 = rc0_pd[p] - rcflex_d
+
+    return row0, col0
+
+def rssmodelwave(grating,grang,artic,trkrho,cbin,cols,datobs):
     """compute wavelengths from model of RSS
+
+    Parameters 
+    ----------
+    datobs: int
+        yyyymmdd of first data of applicability    
 
      TODO:  replace using PySpectrograph
   
     """
-    spec=np.loadtxt(DATADIR+"spec.txt",usecols=(1,))
-    Grat0,Home0,ArtErr,T2Con,T3Con=spec[0:5]
-    FCampoly=spec[5:11]
+
+    row0,col0 = rssdtralign(datobs,trkrho)
+    spec_dp=np.loadtxt(DATADIR+"RSSspecalign.txt")
+    for d in range(spec_dp.shape[0]):
+        if datobs < spec_dp[d,0]: 
+            d -= 1
+            break
+    Grat0,Home0,ArtErr,T2Con,T3Con = spec_dp[d,1:6]
+    FCampoly=spec_dp[d,6:]
+
     grname=np.loadtxt(DATADIR+"gratings.txt",dtype=str,usecols=(0,))
     grlmm,grgam0=np.loadtxt(DATADIR+"gratings.txt",usecols=(1,2),unpack=True)
-
     grnum = np.where(grname==grating)[0][0]
     lmm = grlmm[grnum]
     alpha_r = np.radians(grang+Grat0)
-    beta0_r = np.radians(artic*(1+ArtErr)+Home0)-alpha_r
+    beta0_r = np.radians(artic*(1+ArtErr)+Home0) - 0.015*col0/FCampoly[0] - alpha_r
     gam0_r = np.radians(grgam0[grnum])
     lam0 = 1e7*np.cos(gam0_r)*(np.sin(alpha_r) + np.sin(beta0_r))/lmm
+    modelcenter = 3162.  #   image center (unbinned pixels) for wavelength calibration model
     ww = lam0/1000. - 4.
-    fcam = np.polyval(FCampoly,ww)
+    fcam = np.polyval(FCampoly[::-1],ww)
     disp = (1e7*np.cos(gam0_r)*np.cos(beta0_r)/lmm)/(fcam/.015)
-    dfcam = 3.162*disp*np.polyval([FCampoly[x]*(5-x) for x in range(5)],ww)
+    dfcam = (modelcenter/1000.)*disp*np.polyval([FCampoly[5-x]*(5-x) for x in range(5)],ww)
+
     T2 = -0.25*(1e7*np.cos(gam0_r)*np.sin(beta0_r)/lmm)/(fcam/47.43)**2 + T2Con*disp*dfcam
-    T3 = (-1./24.)*3162.*disp/(fcam/47.43)**2 + T3Con*disp
+    T3 = (-1./24.)*modelcenter*disp/(fcam/47.43)**2 + T3Con*disp
     T0 = lam0 + T2
-    T1 = 3162.*disp + 3*T3
-    X = (np.array(range(cols))+1-cols/2)*cbin/3162.
+    T1 = modelcenter*disp + 3*T3
+    X = (np.array(range(cols))-cols/2)*cbin/modelcenter
+
+    print row0,col0,beta0_r
+    print T0,T1,T2,T3
+
     lam_X = T0+T1*X+T2*(2*X**2-1)+T3*(4*X**3-3*X)
     return lam_X
 

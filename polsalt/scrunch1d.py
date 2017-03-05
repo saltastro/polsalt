@@ -41,7 +41,7 @@ def scrunch1d(input,binedge):
 
 # sum it into the new bins
     for s in range(ns_x.max()):
-        output_x[ns_x > s] += input_s[s_x[ns_x > s]+s]
+        output_x[ns_x > s] += input_s[s_x[:nx][ns_x > s]+s]
 
     return output_x
 

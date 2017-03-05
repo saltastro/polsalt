@@ -138,6 +138,30 @@ def specpolview(infile_list, bincode='unbin', saveoption = '', debug_out=False):
             plot_s[0].plot(wav_w[w:ww],stokes_sw[0,w:ww],color=plotcolor,label=label)
             label = '_'+name    
 
+      # get manual plot limits, reset tcenter (PA wrap center) if necessary
+        if saveplot:
+            oklim = False
+            while (not oklim):
+                ylimlisti = (raw_input('\nOptional scale (bottom-top, comma sep): ')).split(',')
+                if len(''.join(ylimlisti))==0: ylimlisti = []
+                ismanlim_i = np.array([len(ys)>0 for ys in ylimlisti])
+                if ismanlim_i.sum() == 0: break
+                if stokess>2:
+                    itbottom,ittop = [2*(stokess-3),2*(stokess-3)+1]
+                    if (ismanlim_i[itbottom] != ismanlim_i[ittop]): 
+                        print "set PA limits for either both or neither top and bottom"
+                        continue                     
+                oklim = True
+            for (i,ys) in enumerate(ylimlisti):
+                s = stokess-i/2-1
+                if (ismanlim_i[i] & ((i % 2)==0)): plot_s[s].set_ylim(bottom=float(ys))
+                if (ismanlim_i[i] & ((i % 2)==1)): plot_s[s].set_ylim(top=float(ys))
+                if stokess>2:
+                    if ismanlim_i[itbottom]:
+                        tmin,tmax = plot_s[2].get_ylim()
+                        tcenter = (tmin+tmax)/2.
+
+      # assemble data
         if bintype == 'unbin':
             nstokes_sw, nerr_sw = viewstokes(stokes_sw,var_sw,ok_sw,tcenter)
 
@@ -234,10 +258,6 @@ def specpolview(infile_list, bincode='unbin', saveoption = '', debug_out=False):
        plot_s[0].set_title(name+"   "+obsdate) 
 
     if saveplot:
-        ylimlist = (raw_input('\nOptional scale (bottom-top, comma sep): ')).split(',')
-        for (i,ys) in enumerate(ylimlist):
-            if ((len(ys)>0) & ((i % 2)==0)): plot_s[stokess-i/2-1].set_ylim(bottom=float(ys))
-            if ((len(ys)>0) & ((i % 2)==1)): plot_s[stokess-i/2-1].set_ylim(top=float(ys))
         tags = name.count("_")
         cyclelist = []
         if tags:                 # raw and final stokes files

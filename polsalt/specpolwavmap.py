@@ -174,23 +174,23 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
     axisrow_o = np.array([rows/4.0, rows/4.0]).astype(int)
     grating = hduarc[0].header['GRATING'].strip()
     grang = hduarc[0].header['GR-ANGLE']
-    artic = hduarc[0].header['CAMANG']    
+    artic = hduarc[0].header['CAMANG']
+    trkrho = hduarc[0].header['TRKRHO']  
+    date =  hduarc[0].header['DATE-OBS'].replace('-','')  
 
     #set up some output arrays
-    wavmap_orc = np.zeros((2,rows/2.0,cols))
+    wavmap_orc = np.zeros((2,rows/2,cols))
     edgerow_od = np.zeros((2,2))
     cofrows_o = np.zeros(2)
     legy_od = np.zeros((2,2))
 
-    lam_X = rssmodelwave(grating,grang,artic,cbin,cols)
-    np.savetxt("lam_X_60.txt",lam_X,fmt="%8.3f")
-    C_f = np.polyfit(np.arange(cols),lam_X,3)
+    lam_X = rssmodelwave(grating,grang,artic,trkrho,cbin,cols,date)
+    np.savetxt("lam_X_"+str(image_no)+".txt",lam_X,fmt="%8.3f")
+    C_f = np.polynomial.legendre.legfit(np.arange(cols),lam_X,3)[::-1]
     dbhdr = open(datadir+"arcdb_guesshdr.txt").readlines()
-    guessfile="wavguess_"+str(image_no)+".txt"
-    open(guessfile,'w').writelines(dbhdr+[("0.0 "+4*"%12.5e ") % tuple(C_f[::-1])])
+
 
     for o in (0,1):
-
         #correct the shape of the arc for the distortions
         arc_yc = correct_wollaston(arc_orc[o], -drow_oc[o])
 
@@ -211,8 +211,12 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
         dbfilename = "arcdb_"+str(image_no)+"_"+str(o)+".txt"
         ystart = axisrow_o[o]
 
+        guessfile="wavguess_"+str(image_no)+"_"+str(o)+".txt"
+#        open(guessfile,'w').writelines(dbhdr+[("%8.2f "+4*"%12.5e ") % ((ystart,)+tuple(C_f[::-1]))])
+
         if (not os.path.exists(dbfilename)):
-            guesstype = 'file'
+#            guesstype = 'file'
+            guesstype = 'rss'            
             hduarc.writeto(arcimage,clobber=True)
                  
             specidentify(arcimage, lampfile, dbfilename, guesstype=guesstype,

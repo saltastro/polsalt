@@ -39,13 +39,15 @@ def read_wollaston(hdu, wollaston_file):
     grating = hdu[0].header['GRATING'].strip()
     grang = hdu[0].header['GR-ANGLE']
     artic = hdu[0].header['CAMANG']
+    trkrho = hdu[0].header['TRKRHO']
+    date =  hdu[0].header['DATE-OBS'].replace('-','')  
     cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")]
 
 
     #load data from wollaston file
     lam_m = np.loadtxt(wollaston_file,dtype=float,usecols=(0,))
     rpix_om = np.loadtxt(wollaston_file,dtype=float,unpack=True,usecols=(1,2))
-    lam_c = rssmodelwave(grating,grang,artic,cbin,cols)
+    lam_c = rssmodelwave(grating,grang,artic,trkrho,cbin,cols,date)
     return interp1d(lam_m,rpix_om,kind='cubic',bounds_error=False)(lam_c)
 
 
