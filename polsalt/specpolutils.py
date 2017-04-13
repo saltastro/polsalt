@@ -1,4 +1,4 @@
-import os
+import os, sys, glob, shutil, inspect
 import numpy as np
 
 from saltobslog import obslog
@@ -6,9 +6,63 @@ from astropy.table import Table
 
 DATADIR = os.path.dirname(__file__) + '/data/'
 
+# ------------------------------------
+
+def datedfile(filename,date):
+    """ select file based on observation date and latest version
+
+    Parameters
+    ----------
+    filename: text file name pattern, including "yyyymmdd_vnn" place holder for date and version
+    date: yyyymmdd of observation
+
+    Returns: file name
+
+    """
+
+    filelist = sorted(glob.glob(filename.replace('yyyymmdd_vnn','????????_v??')))
+    if len(filelist)==0: return ""
+    dateoffs = filename.find('yyyymmdd')
+    datelist = [file[dateoffs:dateoffs+8] for file in filelist]
+    file = filelist[0]
+    for (f,fdate) in enumerate(datelist):
+        if date < fdate: continue
+        for (v,vdate) in enumerate(datelist[f:]):
+            if vdate > fdate: continue
+            file = filelist[f+v]
+ 
+    return file     
+# ------------------------------------
+
+def datedline(filename,date):
+    """ select line from file based on observation date and latest version
+
+    Parameters
+    ----------
+    filename: string
+        skips lines without first field [yyyymmdd]_v[nn] datever label
+    date: yyyymmdd of observation
+
+    Returns: string which is selected line from file (including datever label)
+
+    """
+    line_l = [ll for ll in open(filename) if ll[8:10] == "_v"]
+    datever_l = [line_l[l].split()[0] for l in range(len(line_l))]
+
+    line = ""
+    for (l,datever) in enumerate(datever_l):
+        if date < datever[:8]: continue
+        for (v,vdatever) in enumerate(datever_l[l:]):
+            if vdatever[:8] > datever[:8]: continue
+            datever = datever_l[l+v]
+            line = line_l[l+v]
+ 
+    return line     
+# ------------------------------------
+
 def rssdtralign(datobs,trkrho):
-    """return predicted RSS optic axis relative to detector center (in unbinned pixels)
-    Correct for flexure, and detector alignment history.
+    """return predicted RSS optic axis relative to detector center (in unbinned pixels), plate scale
+    Correct for flexure, and use detector alignment history.
 
     Parameters 
     ----------
@@ -20,18 +74,15 @@ def rssdtralign(datobs,trkrho):
     """
 
   # optic axis is center of imaging mask.  In columns, same as longslit position
-    label_p=np.loadtxt(DATADIR+"RSSimgalign.txt",usecols=0,dtype=str)
     rc0_pd=np.loadtxt(DATADIR+"RSSimgalign.txt",usecols=(1,2))
     flex_p = np.array([np.sin(np.radians(trkrho)),np.cos(np.radians(trkrho))-1.])
     rcflex_d = (rc0_pd[0:2]*flex_p[:,None]).sum(axis=0)
 
-    for p in range(2,rc0_pd.shape[0]):
-        if datobs < label_p[p]: 
-            d -= 1
-            break
-    row0,col0 = rc0_pd[p] - rcflex_d
+    row0,col0,C0 = np.array(datedline(DATADIR+"RSSimgalign.txt",datobs).split()[1:]).astype(float)
+    row0,col0 = np.array([row0,col0]) - rcflex_d
 
-    return row0, col0
+    return row0, col0, C0
+# ------------------------------------
 
 def rssmodelwave(grating,grang,artic,trkrho,cbin,cols,datobs):
     """compute wavelengths from model of RSS
@@ -45,14 +96,10 @@ def rssmodelwave(grating,grang,artic,trkrho,cbin,cols,datobs):
   
     """
 
-    row0,col0 = rssdtralign(datobs,trkrho)
-    spec_dp=np.loadtxt(DATADIR+"RSSspecalign.txt")
-    for d in range(spec_dp.shape[0]):
-        if datobs < spec_dp[d,0]: 
-            d -= 1
-            break
-    Grat0,Home0,ArtErr,T2Con,T3Con = spec_dp[d,1:6]
-    FCampoly=spec_dp[d,6:]
+    row0,col0 = rssdtralign(datobs,trkrho)[:2]
+    spec_dp=np.array(datedline(DATADIR+"RSSspecalign.txt",datobs).split()[1:]).astype(float)
+    Grat0,Home0,ArtErr,T2Con,T3Con = spec_dp[:5]
+    FCampoly=spec_dp[5:]
 
     grname=np.loadtxt(DATADIR+"gratings.txt",dtype=str,usecols=(0,))
     grlmm,grgam0=np.loadtxt(DATADIR+"gratings.txt",usecols=(1,2),unpack=True)
@@ -73,16 +120,14 @@ def rssmodelwave(grating,grang,artic,trkrho,cbin,cols,datobs):
     T0 = lam0 + T2
     T1 = modelcenter*disp + 3*T3
     X = (np.array(range(cols))-cols/2)*cbin/modelcenter
-
-    print row0,col0,beta0_r
-    print T0,T1,T2,T3
-
     lam_X = T0+T1*X+T2*(2*X**2-1)+T3*(4*X**3-3*X)
     return lam_X
+# ------------------------------------
 
 def image_number(image_name):
     """Return the number for an image"""
     return int(os.path.basename(image_name).split('.')[0][-4:])
+# ------------------------------------
 
 def list_configurations(infilelist, log):
     """Produce a list of files of similar configurations
@@ -174,6 +219,7 @@ def list_configurations(infilelist, log):
         config_dict[(grating, grtilt, camang, blockvisit)] = image_dict
 
     return config_dict
+# ------------------------------------
 
 def configmap(obs_tab, config_list=('GRATING','GR-ANGLE', 'CAMANG')):
     """Determine how many different configurations are in the list
@@ -189,7 +235,7 @@ def configmap(obs_tab, config_list=('GRATING','GR-ANGLE', 'CAMANG')):
         Set of configurations
     """
     return list(set(zip(*(obs_tab[x] for x in config_list))))
-
+# ------------------------------------
 
 def list_configurations_old(infilelist, log):
     """For data observed prior 2015
