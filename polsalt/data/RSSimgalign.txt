@@ -1,12 +1,14 @@
 # RSS detector alignment history		
-# displacement in unbinned pixels of center of P000000N00 imaging mask from CCD center		
-# 21  Feb  2017  khn		
+# displacement in unbinned pixels of center of P000000N00 imaging mask from CCD center
+# C focal plane scale micr/arcsec		
+# 10 Apr 2017  khn		
 # flexure	row0	col0
 sin_rho	     -3.81	2.74
 cos_rho-1	-11.83	-2.98
 #		
-# yyyymmdd	row0	col0
-20110425	-23.94	21.75
-20120117	-26.46	2.55
-20141219	-32.06	0.24
-20160905	-28.52	4.85
+# yyyymmdd	 row0	col0   C  
+00000000_v01 -23.94 21.75 222.582
+20110409_v01 -23.94 21.75 226.143 
+20120117_v01 -26.46	2.55 226.143   
+20141219_v01 -32.06	0.24 226.143  
+20160905_v01 -28.52	4.85 226.143   

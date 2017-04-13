@@ -209,22 +209,35 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
         hduarc['SCI'].data = arc_yc
         arcimage = "arc_"+str(image_no)+"_"+str(o)+".fits"
         dbfilename = "arcdb_"+str(image_no)+"_"+str(o)+".txt"
+        otherdbfilename = "arcdb_"+str(image_no)+"_"+str(int(not(o==1)))+".txt"
+        guessfilename = ""
         ystart = axisrow_o[o]
 
-        guessfile="wavguess_"+str(image_no)+"_"+str(o)+".txt"
-#        open(guessfile,'w').writelines(dbhdr+[("%8.2f "+4*"%12.5e ") % ((ystart,)+tuple(C_f[::-1]))])
-
         if (not os.path.exists(dbfilename)):
-#            guesstype = 'file'
-            guesstype = 'rss'            
+            if (os.path.exists(otherdbfilename)):
+                row_Y = np.loadtxt(otherdbfilename,dtype=float,usecols=(0,),ndmin=1)
+                closestrow = row_Y[np.argmin(np.abs(row_Y - ystart))]
+                guessfilename="wavguess_"+str(image_no)+"_"+str(o)+".txt"  
+                guessfile=open(guessfilename, 'w')            
+                for line in open(otherdbfilename):
+                    if (len(line.split())==0): continue             # ignore naughty dbfile extra lines
+                    if (line[0] == "#"):
+                        guessfile.write(line)
+                    elif (float(line.split()[0]) == closestrow):
+                        guessfile.write(line)
+                guessfile.close()
+                guesstype = 'file'
+#                guesstype = 'rss'
+            else:
+#               open(guessfile,'w').writelines(dbhdr+[("%8.2f "+4*"%12.5e ") % ((ystart,)+tuple(C_f[::-1]))])
+                guesstype = 'rss'            
             hduarc.writeto(arcimage,clobber=True)
                  
             specidentify(arcimage, lampfile, dbfilename, guesstype=guesstype,
-                guessfile=guessfile, automethod=automethod,  function=function,  order=order,
+                guessfile=guessfilename, automethod=automethod,  function=function,  order=order,
                 rstep=20, rstart=ystart, mdiff=20, thresh=3, niter=5, smooth=3,
                 inter=True, clobber=True, logfile=logfile, verbose=True)
             if (not debug): os.remove(arcimage)
-
                 
         wavmap_yc, cofrows_o[o], legy_od[o], edgerow_od[o] = \
                 wave_map(dbfilename, edgerow_od[o], rows, cols, ystart, order, log=log)
@@ -289,17 +302,29 @@ def wave_map(dbfilename, edgerow_d, rows, cols, ystart, order=3, log=None):
     # process dbfile legendre coefs within FOV into wavmap (_Y = line in dbfile)
     legy_Y = np.loadtxt(dbfilename,dtype=float,usecols=(0,),ndmin=1)
     dblegcof_lY = np.loadtxt(dbfilename,unpack=True,dtype=float,usecols=range(1,order+2),ndmin=2)
+    hasdomain = False
+    for line in open(dbfilename):
+        if line[1:7] == "domain":
+            domain_c = np.array(line[8:].split(',')).astype(float)
+            hasdomain = True
+            break
 
-    # first convert to centered legendre coefficients to remove crosscoupling
-    xcenter = cols/2.
-    legcof_lY = np.zeros_like(dblegcof_lY)
-    legcof_lY[2] = dblegcof_lY[2] + 5.*dblegcof_lY[3]*xcenter
-    legcof_lY[3] = dblegcof_lY[3]
-    legcof_lY[0] = 0.5*legcof_lY[2] + (dblegcof_lY[0]-dblegcof_lY[2]) + \
-        (dblegcof_lY[1]-1.5*dblegcof_lY[3])*xcenter + 1.5*dblegcof_lY[2]*xcenter**2 + \
-        2.5*dblegcof_lY[3]*xcenter**3
-    legcof_lY[1] = 1.5*legcof_lY[3] + (dblegcof_lY[1]-1.5*dblegcof_lY[3]) + \
-        3.*dblegcof_lY[2]*xcenter + 7.5*dblegcof_lY[3]*xcenter**2
+    if hasdomain:
+        xcenter = domain_c.mean()
+        legcof_lY = dblegcof_lY
+        xfit_c = 2.*(np.arange(cols) - xcenter)/(domain_c[1]-domain_c[0])   
+    else:
+      # convert to centered legendre coefficients to remove crosscoupling
+        xcenter = cols/2.
+        legcof_lY = np.zeros_like(dblegcof_lY)
+        legcof_lY[2] = dblegcof_lY[2] + 5.*dblegcof_lY[3]*xcenter
+        legcof_lY[3] = dblegcof_lY[3]
+        legcof_lY[0] = 0.5*legcof_lY[2] + (dblegcof_lY[0]-dblegcof_lY[2]) + \
+            (dblegcof_lY[1]-1.5*dblegcof_lY[3])*xcenter + 1.5*dblegcof_lY[2]*xcenter**2 + \
+            2.5*dblegcof_lY[3]*xcenter**3
+        legcof_lY[1] = 1.5*legcof_lY[3] + (dblegcof_lY[1]-1.5*dblegcof_lY[3]) + \
+            3.*dblegcof_lY[2]*xcenter + 7.5*dblegcof_lY[3]*xcenter**2
+        xfit_c = np.arange(-cols/2,cols/2)
 
     # remove rows outside slit
     argYbad = np.where((legy_Y<edgerow_d[0]) | (legy_Y>edgerow_d[1]))[0]
@@ -320,7 +345,7 @@ def wave_map(dbfilename, edgerow_d, rows, cols, ystart, order=3, log=None):
     # assume this is short MOS slit: use ystart solution for all rows, undo the slit edge settings
         log.message('FEW DATABASE ROWS, ASSUME MOS, USE START' , with_header=False)                    
         legcof_l = legcof_lY[:,legy_Y.astype(int)==ystart].ravel()
-        wavmap_yc = np.tile(np.polynomial.legendre.legval(np.arange(-cols/2,cols/2),legcof_l)[:,None],rows/2).T
+        wavmap_yc = np.tile(np.polynomial.legendre.legval(xfit_c,legcof_l)[:,None],rows/2).T
         edgerow_d = 0,rows/2
         cofrows = 1
         legy_d = ystart,ystart
@@ -337,7 +362,7 @@ def wave_map(dbfilename, edgerow_d, rows, cols, ystart, order=3, log=None):
             legcof_ly[l] = np.polyval(polycofs,Y_y)
         wavmap_yc = np.zeros((rows/2,cols))
         for y in range(rows/2):
-            wavmap_yc[y] = np.polynomial.legendre.legval(np.arange(-cols/2,cols/2),legcof_ly[:,y])
+            wavmap_yc[y] = np.polynomial.legendre.legval(xfit_c,legcof_ly[:,y])
         legy_d = legy_Y.min(),legy_Y.max()
 
     return wavmap_yc, cofrows, legy_d, edgerow_d

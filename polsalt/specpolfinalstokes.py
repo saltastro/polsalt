@@ -11,13 +11,14 @@ import operator
 
 import numpy as np
 from astropy.io import fits as pyfits
-#import pyfits
 
 from scipy.interpolate import interp1d
 from pyraf import iraf
 from iraf import pysalt
 from saltobslog import obslog
 from saltsafelog import logging
+
+from specpolutils import datedfile, datedline
 
 import reddir
 datadir = os.path.dirname(inspect.getfile(reddir))+"/data/"
@@ -77,15 +78,9 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
         TelZeropointfile = datedfile(datadir+"RSSpol_Linear_TelZeropoint_yyyymmdd_vnn.txt",dateobs)
         twav_l,tq0_l,tu0_l,err_l = np.loadtxt(TelZeropointfile,dtype=float,unpack=True,ndmin=2)
 
-    # input PAZeropoint file and find correct entry
-        pdatever_l = np.loadtxt(datadir+"RSSpol_Linear_PAZeropoint.txt",usecols=(0,),dtype=str,ndmin=1)
-        dpa_l = np.loadtxt(datadir+"RSSpol_Linear_PAZeropoint.txt",usecols=(1,),dtype=float,ndmin=1)
-        for (l,pdatever) in enumerate(pdatever_l):
-            if dateobs < pdatever[:8]: continue
-            for (v,vdatever) in enumerate(pdatever_l[l:]):
-                if vdatever[0:8] > pdatever[0:8]: continue
-                dpadatever = pdatever_l[l+v]
-                dpa = dpa_l[l+v]
+    # input PAZeropoint file and get correct entry
+        dpadatever,dpa = datedline(datadir+"RSSpol_Linear_PAZeropoint.txt",dateobs).split()
+        dpa = float(dpa)
 
     # prepare calibration keyword documentation            
         pacaltype = "Equatorial"
@@ -352,33 +347,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
 #               elif wppat=='ALL-STOKES':  TBS
             # end of obs loop
         # end of config loop
-    return
-        
-# ------------------------------------
-def datedfile(filename,date):
-    """ select file based on observation date and latest version
-
-    Parameters
-    ----------
-    filename: text file name pattern, including "yyyymmdd_vnn" place holder for date and version
-    date: yyyymmdd of observation
-
-    Returns: file name
-
-    """
-
-    filelist = sorted(glob.glob(filename.replace('yyyymmdd_vnn','????????_v??')))
-    if len(filelist)==0: return ""
-    dateoffs = filename.find('yyyymmdd')
-    datelist = [file[dateoffs:dateoffs+8] for file in filelist]
-    file = filelist[0]
-    for (f,fdate) in enumerate(datelist):
-        if date < fdate: continue
-        for (v,vdate) in enumerate(datelist[f:]):
-            if vdate > fdate: continue
-            file = filelist[f+v]
- 
-    return file      
+    return 
 
 # ------------------------------------
 def specpolrotate(stokes_Sw,var_Sw,par_w,normalized=False):

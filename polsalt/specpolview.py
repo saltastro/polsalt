@@ -52,6 +52,8 @@ def specpolview(infile_list, bincode='unbin', saveoption = '', debug_out=False):
     savetext = (saveoption.count('text')>0) | debug
     saveplot = (saveoption.count('plot')>0) | debug
     plotcolor_o = ['b','g','r','c','m','y','k']
+    askpltlim = True
+    tcenter = 0.
 
     for obs in range(obss):
         hdul = pyfits.open(infile_list[obs])
@@ -113,7 +115,8 @@ def specpolview(infile_list, bincode='unbin', saveoption = '', debug_out=False):
 
         wtavview_s0,wtaverr_s0 = viewstokes(wtavnstokes_s0,wtavnvar_s0,ok_s0)
         if stokess > 2:
-            tcenter = ((0.5*np.arctan2(wtavnstokes_s0[2],wtavnstokes_s0[1])) + np.pi) % np.pi
+            if tcenter == 0:                 # tcenter has not been set by manual plot limits
+                tcenter = ((0.5*np.arctan2(wtavnstokes_s0[2],wtavnstokes_s0[1]))[0] + np.pi) % np.pi
             wtavview_s0,wtaverr_s0 = viewstokes(wtavnstokes_s0,wtavnvar_s0,ok_s0,tcenter)
         else:
             tcenter = 0.
@@ -138,29 +141,24 @@ def specpolview(infile_list, bincode='unbin', saveoption = '', debug_out=False):
             plot_s[0].plot(wav_w[w:ww],stokes_sw[0,w:ww],color=plotcolor,label=label)
             label = '_'+name    
 
-      # get manual plot limits, reset tcenter (PA wrap center) if necessary
+      # get manual plot limits, resetting tcenter (PA wrap center) if necessary
         if saveplot:
-            oklim = False
-            while (not oklim):
+            while (askpltlim):
                 ylimlisti = (raw_input('\nOptional scale (bottom-top, comma sep): ')).split(',')
                 if len(''.join(ylimlisti))==0: ylimlisti = []
                 ismanlim_i = np.array([len(ys)>0 for ys in ylimlisti])
-                if ismanlim_i.sum() == 0: break
+                if ismanlim_i.sum() == 0: 
+                    askpltlim = False
+                    break
                 if stokess>2:
                     itbottom,ittop = [2*(stokess-3),2*(stokess-3)+1]
                     if (ismanlim_i[itbottom] != ismanlim_i[ittop]): 
                         print "set PA limits for either both or neither top and bottom"
-                        continue                     
-                oklim = True
-            for (i,ys) in enumerate(ylimlisti):
-                s = stokess-i/2-1
-                if (ismanlim_i[i] & ((i % 2)==0)): plot_s[s].set_ylim(bottom=float(ys))
-                if (ismanlim_i[i] & ((i % 2)==1)): plot_s[s].set_ylim(top=float(ys))
-                if stokess>2:
+                        continue
                     if ismanlim_i[itbottom]:
-                        tmin,tmax = plot_s[2].get_ylim()
-                        tcenter = (tmin+tmax)/2.
-
+                        tcenter = np.radians((float(ylimlisti[itbottom]) + float(ylimlisti[ittop]))/2.)
+                askpltlim = False
+                     
       # assemble data
         if bintype == 'unbin':
             nstokes_sw, nerr_sw = viewstokes(stokes_sw,var_sw,ok_sw,tcenter)
@@ -246,18 +244,22 @@ def specpolview(infile_list, bincode='unbin', saveoption = '', debug_out=False):
         print >>textfile,'\n'
         np.savetxt(textfile,np.vstack((wav_v,nstokes_sv[1:],nerr_sv[1:])).T, fmt=(fmt_s[0]+fmt))
 
-    plot_s[0].set_ylim(bottom=0)                            # intensity plot baseline 0
-    if stokess >2: 
-        plot_s[1].set_ylim(bottom=0)                        # linear polarization % plot baseline 0
-        ymin,ymax = plot_s[2].set_ylim()
-        plot_s[2].set_ylim(bottom=min(ymin,(ymin+ymax)/2.-5.),top=max(ymax,(ymin+ymax)/2.+5.))
-
-    if obss>1: 
-       plot_s[0].legend(fontsize='x-small',loc='upper left')
-    else: 
-       plot_s[0].set_title(name+"   "+obsdate) 
-
     if saveplot:
+        plot_s[0].set_ylim(bottom=0)                # intensity plot default baseline 0
+        if stokess >2: 
+            plot_s[1].set_ylim(bottom=0)            # linear polarization % plot default baseline 0
+            ymin,ymax = plot_s[2].set_ylim()        # linear polarization PA plot default 5 degree pad
+            plot_s[2].set_ylim(bottom=min(ymin,(ymin+ymax)/2.-5.),top=max(ymax,(ymin+ymax)/2.+5.))
+        if len(ylimlisti)>0:
+            for (i,ys) in enumerate(ylimlisti):
+                s = stokess-i/2-1
+                if (ismanlim_i[i] & ((i % 2)==0)): plot_s[s].set_ylim(bottom=float(ys))
+                if (ismanlim_i[i] & ((i % 2)==1)): plot_s[s].set_ylim(top=float(ys))
+
+        if obss>1: 
+            plot_s[0].legend(fontsize='x-small',loc='upper left')
+        else: 
+            plot_s[0].set_title(name+"   "+obsdate) 
         tags = name.count("_")
         cyclelist = []
         if tags:                 # raw and final stokes files
