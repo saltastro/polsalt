@@ -49,6 +49,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
     _S: unnormalized raw stokes within waveplate position pair: (0,1) = (I,Q)
     _F: unnormalized final stokes (0,1,2) = (I,Q,U)
     """
+    calhistorylist = ["PolCal Model: 20170429",]
 
     patternlist = open(datadir+'wppaterns.txt','r').readlines()
     patternpairs = dict();  patternstokes = dict()
@@ -84,23 +85,21 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
 
     # prepare calibration keyword documentation            
         pacaltype = "Equatorial"
-        calhistorylist = [] 
         if HW_Cal_override: 
             Linear_PolZeropoint_override=True
             PAZeropoint_override=True
             pacaltype = "Instrumental"
-            calhistorylist = ["Uncalibrated"]
+            calhistorylist.append("HWCal: Uncalibrated")
         elif Linear_PolZeropoint_override:
-            HW_Cal_override=True
             PAZeropoint_override=True
-            calhistorylist = [os.path.basename(HWCalibrationfile),"Null PolZeropoint"]
+            calhistorylist.extend(["HWCal: "+os.path.basename(HWCalibrationfile),"PolZeropoint: Null"])
         elif PAZeropoint_override: 
-            calhistorylist = [os.path.basename(HWCalibrationfile),  \
-                os.path.basename(TelZeropointfile), "Null PAZeropoint"]
+            calhistorylist.extend(["HWCal: "+os.path.basename(HWCalibrationfile),  \
+                "PolZeropoint: "+os.path.basename(TelZeropointfile), "PAZeropoint: Null"])
         else:
-            calhistorylist = [os.path.basename(HWCalibrationfile),    \
-                os.path.basename(TelZeropointfile), \
-                "RSSpol_Linear_PAZeropoint.txt "+str(dpadatever)]
+            calhistorylist.extend(["HWCal: "+os.path.basename(HWCalibrationfile),    \
+                "PolZeropoint: "+os.path.basename(TelZeropointfile), \
+                "PAZeropoint: RSSpol_Linear_PAZeropoint.txt "+str(dpadatever)+" "+str(dpa)])
 
         log.message('  PA type: '+pacaltype, with_header=False) 
         if len(calhistorylist): log.message('  '+'\n  '.join(calhistorylist), with_header=False) 
@@ -317,7 +316,12 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                 # apply hw efficiency, equatorial PA rotation calibration
                         stokes_fw[1:,ok_w] /= heff_w[ok_w]
                         var_fw[1:,ok_w] /= heff_w[ok_w]**2
+
+                        np.savetxt("stokes_fw_0.txt",np.vstack((wav_w,stokes_fw)).T,fmt="%10.3f")
+
                         stokes_fw,var_fw = specpolrotate(stokes_fw,var_fw,eqpar_w)
+
+                        np.savetxt("stokes_fw_1.txt",np.vstack((wav_w,stokes_fw)).T,fmt="%10.3f")
 
                 # save final stokes fits file for this observation
                     infile = infilelist[rawlist[comblist[k][0]][0]]
@@ -332,8 +336,8 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
 
                     hduout[0].header['WPPATERN'] = wppat
                     hduout[0].header['PATYPE'] = pacaltype
-                    if len(calhistorylist): 
-                        hduout[0].header.add_history('POLCAL: '+' '.join(calhistorylist))
+                    if len(calhistorylist):
+                        for line in calhistorylist: hduout[0].header.add_history(line)
 
                     if len(chisqlist[obs]): 
                         hduout[0].header['SYSERR'] = (100.*syserr,'estimated % systematic error')
