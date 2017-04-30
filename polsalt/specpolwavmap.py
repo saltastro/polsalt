@@ -209,7 +209,11 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
         hduarc['SCI'].data = arc_yc
         arcimage = "arc_"+str(image_no)+"_"+str(o)+".fits"
         dbfilename = "arcdb_"+str(image_no)+"_"+str(o)+".txt"
+
+     #  use for guessfile dbfile for other beam, or, if none, "arcdb_(img)_guess.txt"
         otherdbfilename = "arcdb_"+str(image_no)+"_"+str(int(not(o==1)))+".txt"
+        if (not os.path.exists(otherdbfilename)):
+            otherdbfilename = "arcdb_"+str(image_no)+"_guess.txt"
         guessfilename = ""
         ystart = axisrow_o[o]
 
