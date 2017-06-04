@@ -106,5 +106,5 @@ def correct_wollaston(data, drow_shift):
     rows,cols = data.shape
     sdata = np.zeros(data.shape, dtype='float32')
     for c in range(cols):
-        shift(data[:,c], drow_shift[c], sdata[:,c])
+        shift(data[:,c], drow_shift[c], sdata[:,c], order=1)
     return sdata

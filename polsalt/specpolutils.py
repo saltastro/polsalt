@@ -41,7 +41,7 @@ def datedline(filename,date):
     ----------
     filename: string
         skips lines without first field [yyyymmdd]_v[nn] datever label
-    date: yyyymmdd of observation
+    date: string or int yyyymmdd of observation
 
     Returns: string which is selected line from file (including datever label)
 
@@ -51,9 +51,9 @@ def datedline(filename,date):
 
     line = ""
     for (l,datever) in enumerate(datever_l):
-        if date < datever[:8]: continue
+        if (int(date) < int(datever[:8])): continue
         for (v,vdatever) in enumerate(datever_l[l:]):
-            if vdatever[:8] > datever[:8]: continue
+            if (int(vdatever[:8]) > int(datever[:8])): continue
             datever = datever_l[l+v]
             line = line_l[l+v]
  

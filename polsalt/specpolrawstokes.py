@@ -74,6 +74,7 @@ def specpolrawstokes(infilelist, logfile='salt.log'):
         configs = 0
         obss = 0
         for i in range(images):
+            hdul = pyfits.open(infilelist[i])
             if (wpstate_i[i] == 'unknown'):
                 log.message( 'Warning: Image %s WP-STATE UNKNOWN, assume it is 3 (HW)' % img_i[i], with_header=False)
                 wpstate_i[i] = 'hw'
@@ -87,7 +88,11 @@ def specpolrawstokes(infilelist, logfile='salt.log'):
             grating = obs_dict['GRATING'][i].strip()
             grang = float(obs_dict['GR-ANGLE'][i])
             artic = float(obs_dict['CAMANG'][i])
-            confdat_d = [rbin, cbin, grating, grang, artic, wppat_i[i]]
+            wav0 = hdul[0].header['CRVAL1']
+            dwav = hdul[0].header['CDELT1']
+            wavs = hdul['SCI'].data.shape[-1]
+
+            confdat_d = [rbin, cbin, grating, grang, artic, wav0, dwav, wavs, wppat_i[i]]
             obsdat_d = [ object_i[i], rbin, cbin, grating, grang, artic, wppat_i[i]]
             if configs == 0:
                 confdat_cd = [confdat_d]
