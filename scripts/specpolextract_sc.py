@@ -24,20 +24,22 @@ def specpolextract_sc(infilelist,yoffo,dyasec,logfile):
     tilt_i = np.full(len(infilelist),np.nan)
     filestocorrect = 0
 
+    infilelist = sorted(infilelist)
     for i,img in enumerate(infilelist):
-        if (os.path.exists('c' + img)): continue
+#        if (os.path.exists('c' + img)): continue
         hdu = pyfits.open(img)
         if hdu[0].header['CCDTYPE'] == 'ARC': continue
         filestocorrect += 1 
         rows, cols = hdu['SCI'].data[0].shape
-        cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")] 
-        col_c = np.arange(3*cols/16,5*cols/16) + (cols/2)*np.arange(2)[:,None]
+        cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")]
+        if hdu[0].header['GRATING'].strip() == 'PG0300': 
+            y1,y2 = .25*cols,.5*cols                            # avoid 2nd order
+        else: y1,y2 = .25*cols,.75*cols 
+        col_c = (np.arange(y1-.05*cols,y1+.05*cols) + (y2-y1)*np.arange(2)[:,None]).astype(int)
         y_oc = np.zeros((2,2))
-        for o,c in np.ndindex(2,2):     
+        for o,c in np.ndindex(2,2):  
             y_oc[o,c] = np.median(hdu['SCI'].data[o,:,col_c[c]].sum(axis=0).argsort()[-17:])
-        print y_oc
-        exit()
-        tilt_i[i] = int(2*cbin*(y_oc.mean(axis=0)[0]-y_oc.mean(axis=0)[1]))
+        tilt_i[i] = int((cols/(y2-y1))*cbin*(y_oc.mean(axis=0)[0]-y_oc.mean(axis=0)[1]))
         print img,": image tilt: ",int(tilt_i[i])
         print >>log,img,": image tilt: ",int(tilt_i[i])
 
@@ -49,18 +51,19 @@ def specpolextract_sc(infilelist,yoffo,dyasec,logfile):
         
     # straighten out the spectra
         for img in infilelist:
-            if (os.path.exists('c' + img)): continue
+#            if (os.path.exists('c' + img)): continue
             hdu=correct_files(pyfits.open(img),tilt=tilt)
             hdu.writeto('c' + img, clobber=True)
             print 'c' + img
             print >>log,'c' + img
 
-    infilelist = sorted(glob.glob('cw*fits'))
+    infilelist = [ 'c'+file for file in infilelist ]
+
     for img in infilelist:
         hdu = pyfits.open(img)
         if hdu[0].header['LAMPID'].strip() != 'NONE': continue
         ybin = int(hdu[0].header['CCDSUM'].split(' ')[1])
-        dy = int(dyasec*(8/ybin))
+        dy = int(dyasec*(8/ybin))        
         yo_o = np.zeros(2,dtype=int)
         yo_o[0] = np.median(hdu[1].data[0].sum(axis=1).argsort()[-9:]) + yoffo
         yo_o[1] = np.median(hdu[1].data[1].sum(axis=1).argsort()[-9:]) + yoffo*1.0075  # allow for magnification
@@ -80,7 +83,7 @@ def specpolextract_sc(infilelist,yoffo,dyasec,logfile):
 
         o = 0 
         y1 = yo_o[o] - dy
-        y2 = yo_o[o] + dy
+        y2 = yo_o[o] + dy        
         data = hdu[1].data[o]
         var = hdu[2].data[o]
         mask = hdu[3].data[o]
@@ -128,8 +131,8 @@ def extract(data, var, mask, wave, y1, y2, wmin, wmax, wbin):
     
     """
     w = np.arange(wmin, wmax, wbin)
-    y0 = int((y1+y1)/2)
-    wmask = ((wave[y0] > wmin) * (wave[y0] < wmax))
+    y0 = int((y1+y2)/2)
+    wmask = ((wave[y0] > wmin) & (wave[y0] < wmax))
 
     #compute correction to preserve flux
     Wave = wave[y0,wmask]
@@ -143,24 +146,26 @@ def extract(data, var, mask, wave, y1, y2, wmin, wmax, wbin):
     count = 0
     dy = y2-y1
     for y in range(y1-3*dy, y1-2*dy) + range(y2+2*dy, y2+3*dy):
-        s += np.interp(w, wave[y, wmask], data[y, wmask])
+        xmask = (wmask & (mask[y]==0))
+        s += np.interp(w, wave[y, xmask], data[y, xmask])
         count += 1
     s = s / count
 
     # extract the spectra
     f = np.zeros_like(w)
     v = np.zeros_like(w)
-    b = np.zeros_like(w)
+    b = np.zeros_like(w).astype(int)
     for y in range(y1, y2):
-        f += np.interp(w, wave[y, wmask], data[y, wmask]) - s
+        xmask = (wmask & (mask[y]==0))
+        f += np.interp(w, wave[y, xmask], data[y, xmask]) - s
         # not exactly correct but estimate
-        v += np.interp(w, wave[y, wmask], var[y, wmask])
-        b += np.interp(w, wave[y, wmask], mask[y, wmask])
+        v += np.interp(w, wave[y, xmask], var[y, xmask])
+        b += (np.interp(w, wave[y], xmask.astype(float)) < 0.5).astype(int)
 
     f /= fluxcor
     v /= fluxcor**2
-    b = 1.0 * ( b > 0 )
-    b = b.astype('uint8')
+    b = (b > 0.25*(y2-y1+1)).astype('uint8')        # wavelength is bad if > 25% spectrum bad
+
     return w, f, v, b
 
 def write_spectra(wave, sci_ow, var_ow, badbin_ow, header, wbin, outfile):

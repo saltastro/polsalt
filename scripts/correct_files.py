@@ -32,7 +32,16 @@ def correct_files(hdu,tilt=0):
  
     for i in range(1, len(hdu)):
        for o in range(beams):
-          hdu[i].data[o] = correct_wollaston(hdu[i].data[o], -drow_oc[o])
+
+          if hdu[i].name == 'BPM' :
+                tdata = hdu[i].data[o].astype('float')                          
+          else:                     
+                tdata = hdu[i].data[o]
+          tdata = correct_wollaston(tdata, -drow_oc[o])
+          if hdu[i].name == 'BPM' : 
+                hdu[i].data[o] = (tdata > 0.1).astype('uint')
+          else:                     
+                hdu[i].data[o] = tdata 
         
     return hdu
 

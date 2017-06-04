@@ -34,7 +34,7 @@ datadir = os.path.dirname(__file__) + '/data/'
 debug = False
 
 def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines', 
-                  function='legendre', order=3, logfile='salt.log'):
+                  function='legendre', order=3, debug=False, logfile='salt.log'):
     obsdate=os.path.basename(infilelist[0])[7:15]
 
     with logging(logfile, debug) as log:
@@ -42,7 +42,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
       
         # group the files together
         config_dict = list_configurations(infilelist, log)
-
+        
         for config in config_dict:
             if len(config_dict[config]['arc']) == 0:
                 log.message('No Arc for this configuration:', with_header=False)
@@ -109,18 +109,86 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
                                       lampfile=lampfile, function=function, order=order,
                                       automethod=automethod, log=log, logfile=logfile)
 
+          # if image not already cleaned,
+          # use upper outlier quartile fence of 3 column subarray across normalized configuration 
+          #     or 10-sigma spike to cull cosmic rays.  Normalize by rows
+            images = len(config_dict[config]['object'])
+            historylist = list(pyfits.open(config_dict[config]['object'][0])[0].header['HISTORY'])
+            cleanhistory = next((x for x in historylist if x[:7]=="CRCLEAN"),"None")
+            iscr_irc = np.zeros((images,rows,cols),dtype='bool')
+
+            if cleanhistory == 'CRCLEAN: None':
+                historyidx = historylist.index(cleanhistory)
+                upperfence = 4.0
+                lowerfence = 1.5
+                sigmaveto = 2.0
+                sci_irc = np.zeros((images,rows,cols))
+                var_irc = np.zeros((images,rows,cols))
+
+                for (i,image) in enumerate(config_dict[config]['object']):
+                    hdulist = pyfits.open(image)
+                    okbin_rc = (hdulist['BPM'].data == 0)
+                    sci_irc[i][okbin_rc] = hdulist['SCI'].data[okbin_rc]
+                    var_irc[i][okbin_rc] = hdulist['VAR'].data[okbin_rc]
+                    okrow_r = okbin_rc.any(axis=1)
+                    for r in np.where(okrow_r)[0]:
+                        rowmean = sci_irc[i,r][okbin_rc[r]].mean()
+                        sci_irc[i,r] /= rowmean
+                        var_irc[i,r] /= rowmean**2
+                    
+                sci_ijrc = np.zeros((images,3,rows,cols))
+                for j in range(3):
+                    sci_ijrc[:,j,:,1:-1] = sci_irc[:,:,j:cols+j-2]
+                sci_Irc = sci_ijrc.reshape((-1,rows,cols))
+                sci_Irc.sort(axis=0)
+                firstmthird_rc = sci_Irc[-1] - sci_Irc[-3] 
+                q1_rc,q3_rc = np.percentile(sci_Irc,(25,75),axis=0,overwrite_input=True)
+                dq31_rc = q3_rc - q1_rc
+                okq_rc = (dq31_rc > 0.)
+                oksig_rc = (var_irc.sum(axis=0) > 0.)
+                sigma_rc = np.zeros_like(q1_rc)
+                sigma_rc[oksig_rc] = np.sqrt(var_irc.sum(axis=0)[oksig_rc]/((var_irc > 0).sum(axis=0)[oksig_rc]))
+                dq31_rc = np.maximum(dq31_rc,1.35*sigma_rc)                     # avoid impossibly low dq from fluctuations
+
+                iscr1_irc = np.zeros((images,rows,cols),dtype=bool)  
+                iscr2_irc = np.zeros((images,rows,cols),dtype=bool)  
+                iscr1_irc[:,okq_rc] = (sci_irc[:,okq_rc] > (q3_rc + upperfence*dq31_rc)[okq_rc])    # above upper outlier fence
+                iscr2_irc[:,okbin_rc] = ((sci_irc[:,okbin_rc]==sci_irc[:,okbin_rc].max(axis=0)) &   \
+                    (firstmthird_rc[okbin_rc] > 10*sigma_rc[okbin_rc]))                 # or a 10-sigma spike          
+                iscr_irc = (iscr1_irc | iscr2_irc)
+                notcr3_irc =(iscr_irc & (iscr_irc.sum(axis=0)>2))                      # but >2 CR's in one place are bogus
+                notcr4_irc =(iscr_irc & (firstmthird_rc < sigmaveto*dq31_rc))          # seeing/guiding errors, not CR 
+                iscr_irc &= (np.logical_not(notcr3_irc | notcr4_irc))
+
+                isnearcr_irc = np.zeros((images,rows+2,cols+2),dtype=bool)
+                for dr,dc in np.ndindex(3,3):                                       # lower fence on neighbors
+                    isnearcr_irc[:,dr:rows+dr,dc:cols+dc] |= iscr_irc
+                isnearcr_irc = isnearcr_irc[:,1:-1,1:-1]
+                iscr_irc[isnearcr_irc] |= (okq_rc & (sci_irc > (q3_rc + lowerfence*dq31_rc)))[isnearcr_irc]   
+
+                log.message('CR culling with upper quartile fence\n', with_header=False)
+
+            elif cleanhistory == 'None':
+                log.message('CR clean history unknown, none applied (suggest rerunning imred)',with_header=False)
+            else:
+                log.message('CR cleaning already done: '+cleanhistory,with_header=False)
 
             # for images using this arc,save split data along third fits axis, 
             # add wavmap extension, save as 'w' file
-            hduwav = pyfits.ImageHDU(data=wavmap_orc.astype('float32'), header=hduarc['SCI'].header, name='WAV')                 
-            for image in config_dict[config]['object']:
+            hduwav = pyfits.ImageHDU(data=wavmap_orc.astype('float32'), header=hduarc['SCI'].header, name='WAV') 
+              
+            for (i,image) in enumerate(config_dict[config]['object']):
                 hdu = pyfits.open(image)
+                if cleanhistory == 'CRCLEAN: None':                
+                    hdu['BPM'].data[iscr_irc[i]] = 1
+                    hdu[0].header['HISTORY'][historyidx] = \
+                        ('CRCLEAN: upper= %3.1f, lower= %3.1f, sigmaveto= %3.1f' % (upperfence,lowerfence,sigmaveto))
                 hdu, splitrow = specpolsplit(hdu, splitrow=splitrow)
                 hdu['BPM'].data[wavmap_orc==0.] = 1 
                 hdu.append(hduwav)
                 for f in ('SCI','VAR','BPM','WAV'): hdu[f].header['CTYPE3'] = 'O,E'
                 hdu.writeto('w'+image,clobber='True')
-                log.message('Output file '+'w'+image, with_header=False)
+                log.message('Output file '+'w'+image+'  crs: '+str(iscr_irc[i].sum()), with_header=False)
 
     return
 
@@ -187,8 +255,6 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
     lam_X = rssmodelwave(grating,grang,artic,trkrho,cbin,cols,date)
     np.savetxt("lam_X_"+str(image_no)+".txt",lam_X,fmt="%8.3f")
     C_f = np.polynomial.legendre.legfit(np.arange(cols),lam_X,3)[::-1]
-    dbhdr = open(datadir+"arcdb_guesshdr.txt").readlines()
-
 
     for o in (0,1):
         #correct the shape of the arc for the distortions
@@ -233,7 +299,6 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
                 guesstype = 'file'
 #                guesstype = 'rss'
             else:
-#               open(guessfile,'w').writelines(dbhdr+[("%8.2f "+4*"%12.5e ") % ((ystart,)+tuple(C_f[::-1]))])
                 guesstype = 'rss'            
             hduarc.writeto(arcimage,clobber=True)
                  

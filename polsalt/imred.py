@@ -42,7 +42,7 @@ debug = True
 import reddir
 datadir = os.path.dirname(inspect.getfile(reddir))+"/data/"
 
-def imred(infilelist, prodir, bpmfile=None, gaindb = None, cleanup=True):
+def imred(infilelist, prodir, bpmfile=None, crthresh='', gaindb = None, cleanup=True):
     #get the name of the files
     infiles=','.join(['%s' % x for x in infilelist])
     
@@ -131,18 +131,24 @@ def imred(infilelist, prodir, bpmfile=None, gaindb = None, cleanup=True):
             hdu=xtalk(hdu, [], log=log, verbose=verbose)
 
             #cosmic ray clean the data
-            #only clean the object data
-            thresh = 5.0
-            if hdu[0].header['GRATING'].strip()=='PG0300': thresh = 7.0
+            #only clean the object data            
+            if crthresh=='':
+                thresh = 5.0
+                if hdu[0].header['GRATING'].strip()=='PG0300': thresh = 7.0
+            else: thresh=crthresh
 
             if hdu[0].header['CCDTYPE']=='OBJECT' and \
-               hdu[0].header['LAMPID']=='NONE' and \
-               hdu[0].header['INSTRUME']=='RSS':
-               log.message('Cleaning CR using thresh={}'.format(thresh))
-               hdu = multicrclean(hdu, crtype='edge', thresh=thresh, mbox=11, bthresh=5.0,
-                  flux_ratio=0.2, bbox=25, gain=1.0, rdnoise=5.0, fthresh=5.0, bfactor=2,
-                  gbox=3, maxiter=5, log=log, verbose=verbose)
-               for ext in range(13,19): hdu[ext].data = hdu[ext].data.astype('uint8')
+                hdu[0].header['LAMPID']=='NONE' and \
+                hdu[0].header['INSTRUME']=='RSS':
+                if crthresh != False:
+                    log.message('Cleaning CR using thresh={}'.format(thresh))
+                    hdu = multicrclean(hdu, crtype='edge', thresh=thresh, mbox=11, bthresh=5.0,
+                        flux_ratio=0.2, bbox=25, gain=1.0, rdnoise=5.0, fthresh=5.0, bfactor=2,
+                        gbox=3, maxiter=5, log=log, verbose=verbose)
+                    for ext in range(13,19): hdu[ext].data = hdu[ext].data.astype('uint8')
+                    hdu[0].header.add_history('CRCLEAN: multicrclean, thresh = ',thresh)
+                else:
+                    hdu[0].header.add_history('CRCLEAN: None')
             hdu.writeto('xgbp'+img, clobber=True)
             hdu.close()
         

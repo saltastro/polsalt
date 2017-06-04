@@ -1,7 +1,7 @@
 import os, sys, glob
-reddir = '/d/carol/Synched/software/SALT/polsaltcopy/polsalt/'
-scrdir = '/d/carol/Synched/software/SALT/polsaltcopy/scripts/'
-poldir = '/d/carol/Synched/software/SALT/polsaltcopy/'
+reddir = '/d/freyr/Synched/software/SALT/polsaltcurrent/polsalt/'
+scrdir = '/d/freyr/Synched/software/SALT/polsaltcurrent/scripts/'
+poldir = '/d/freyr/Synched/software/SALT/polsaltcurrent/'
 sys.path.extend((reddir,scrdir,poldir))
 
 datadir = reddir+'data/'
@@ -24,10 +24,9 @@ if not os.path.isdir('sci'): os.mkdir('sci')
 os.chdir('sci')
 
 #basic image reductions
-infilelist = glob.glob('../raw/P*fits')
+infilelist = sorted(glob.glob('../raw/P*fits'))
 
-#imred(infilelist, './', datadir+'bpm_rss_11.fits', cleanup=False)
-imred(infilelist, './', datadir+'bpm_rss_11.fits', cleanup=True)
+imred(infilelist, './', datadir+'bpm_rss_11.fits', crthresh=False, cleanup=True)
 
 #basic polarimetric reductions
 # debug=True
@@ -37,7 +36,7 @@ logfile='specpol'+obsdate+'.log'
 #wavelength map
 infilelist = sorted(glob.glob('m*fits'))
 linelistlib=""
-specpolwavmap(infilelist, linelistlib=linelistlib, logfile=logfile)
+#specpolwavmap(infilelist, linelistlib=linelistlib, logfile=logfile)
 
 #background subtraction and extraction
 infilelist = sorted(glob.glob('wm*fits'))

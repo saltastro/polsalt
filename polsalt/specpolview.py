@@ -237,12 +237,22 @@ def specpolview(infile_list, bincode='unbin', saveoption = '', debug_out=False):
             textfile.truncate(0)
         else: print >>textfile
 
-        print >>textfile, name+'   '+obsdate+'\n\n'+'Wavelen   '+(4*" ").join(stokeslist[1:stokess])+(2*" ")+   \
+        print >>textfile, name+'   '+obsdate
+        if bintype== 'unbin':                       # for unbinned data, print out intensity as first column
+            print >>textfile, '\nWavelen        '+(4*" ").join(stokeslist[:stokess])+(2*" ")+   \
                 " Err   ".join(stokeslist[1:stokess])+' Err '+'   Syserr'
-        print >>textfile, ((' wtdavg  '+fmt) % (tuple(wtavview_s0[1:,0])+tuple(wtaverr_s0[1:,0]))),
-        if hassyserr: print >>textfile,('%8.3f' % hdul[0].header['SYSERR']),
-        print >>textfile,'\n'
-        np.savetxt(textfile,np.vstack((wav_v,nstokes_sv[1:],nerr_sv[1:])).T, fmt=(fmt_s[0]+fmt))
+            print >>textfile, ((' wtdavg            '+fmt) % (tuple(wtavview_s0[1:,0])+tuple(wtaverr_s0[1:,0]))),
+            if hassyserr: print >>textfile,('%8.3f' % hdul[0].header['SYSERR']),
+            print >>textfile,'\n'
+            np.savetxt(textfile,np.vstack((wav_v,stokes_sw[0,ok_sw[0]],nstokes_sv[1:],nerr_sv[1:])).T,  \
+                 fmt=("%8.2f %10.2f"+fmt))
+        else:
+            print >>textfile, '\nWavelen   '+(4*" ").join(stokeslist[1:stokess])+(2*" ")+   \
+                " Err   ".join(stokeslist[1:stokess])+' Err '+'   Syserr'
+            print >>textfile, ((' wtdavg  '+fmt) % (tuple(wtavview_s0[1:,0])+tuple(wtaverr_s0[1:,0]))),
+            if hassyserr: print >>textfile,('%8.3f' % hdul[0].header['SYSERR']),
+            print >>textfile,'\n'
+            np.savetxt(textfile,np.vstack((wav_v,nstokes_sv[1:],nerr_sv[1:])).T, fmt=("%8.2f "+fmt))
 
     if saveplot:
         plot_s[0].set_ylim(bottom=0)                # intensity plot default baseline 0
