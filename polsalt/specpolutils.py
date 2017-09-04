@@ -1,5 +1,7 @@
 import os, sys, glob, shutil, inspect
 import numpy as np
+from scipy.interpolate import interp1d
+from scipy import interpolate as ip
 
 from saltobslog import obslog
 from astropy.table import Table
@@ -57,7 +59,53 @@ def datedline(filename,date):
             datever = datever_l[l+v]
             line = line_l[l+v]
  
-    return line     
+    return line
+
+#--------------------------------------------------------
+
+def greff(grating,grang,artic,dateobs,wav):
+#   grating efficiency, zero outside 1st order and eff < grateffedge
+#   p/s added 9 July, 2017 khn
+#   wav may be 1D array
+
+    grname=np.loadtxt(DATADIR+"gratings.txt",dtype=str,usecols=(0,))
+    grlmm,grgam0=np.loadtxt(DATADIR+"gratings.txt",usecols=(1,2),unpack=True)
+    gr300wav,gr300eff,gr300ps=np.loadtxt(DATADIR+"grateff_0300.txt",usecols=(0,1,2),unpack=True)
+    grng,grdn,grthick,grtrans,grbroaden=np.loadtxt(DATADIR+"grateff_v1.txt", \
+        usecols=(1,2,3,4,5),unpack=True)
+    spec_dp=np.array(datedline(DATADIR+"RSSspecalign.txt",dateobs).split()[1:]).astype(float)
+
+    Grat0 = spec_dp[0]
+    grateffedge = 0.04
+
+    grnum = np.where(grname==grating)[0][0]
+    lmm = grlmm[grnum]
+    alpha_r = np.radians(grang+Grat0)
+
+    if grnum == 0:          # SR grating
+        eff = interp1d(gr300wav,gr300eff,kind='cubic',bounds_error=False)(wav)
+        ps = interp1d(gr300wav,gr300ps,kind='cubic',bounds_error=False)(wav) 
+    else:                   # Kogelnik gratings
+        ng = grng[grnum]
+        dn = grdn[grnum]
+        thick = grthick[grnum]
+        tran = grtrans[grnum]
+        broaden = grbroaden[grnum]
+        beta_r = np.arcsin(wav*lmm/1.e7 - np.sin(alpha_r))
+        betag_r = np.arcsin(np.sin(beta_r)/ng)
+        alphag_r = np.arcsin(np.sin(alpha_r)/ng)
+        KK = 2.*np.pi*lmm/1.e7
+        nus = (np.pi*dn/wav)*thick/np.cos(alphag_r)
+        nup = nus*np.cos(alphag_r + betag_r)
+        xi = (thick/(2*np.cos(alphag_r)))*(KK*np.sin(alphag_r) - KK**2*wav/(4.*np.pi*ng))/broaden
+        sins = np.sin(np.sqrt(nus**2+xi**2))
+        sinp = np.sin(np.sqrt(nup**2+xi**2))
+        effs = sins**2/(1.+(xi/nus)**2)
+        effp = sinp**2/(1.+(xi/nup)**2)
+        eff = np.where((sins>0)&(sinp>0)&((effs+effp)/2. > grateffedge),tran*(effs+effp)/2.,0.)
+        ps = np.where(eff > 0., effp/effs, 0.)
+    return eff,ps
+    
 # ------------------------------------
 
 def rssdtralign(datobs,trkrho):
@@ -303,4 +351,24 @@ def list_configurations_old(infilelist, log):
                 +("\n  Use Arc %5i" % imageno_i[iarc]), with_header=False)
     iarc_a = np.unique(iarc_i[iarc_i != -1])
     return iarc_a, iarc_i, confno_i, confdatlist
+#--------------------------------------
 
+def blksmooth1d(ar_x,blk,ok_x):
+# blkaverage, then spline interpolate result
+
+    blks = ar_x.shape[0]/blk
+    offset = (ar_x.shape[0] - blks*blk)/2
+    ar_X = ar_x[offset:offset+blks*blk]                  # cut to integral blocks
+    ok_X = ok_x[offset:offset+blks*blk]    
+    ar_by = ar_X.reshape(blks,blk)
+    ok_by = ok_X.reshape(blks,blk)
+
+    okcount_b = (ok_by.sum(axis=1) > blk/2)
+    ar_b = np.zeros(blks)
+    for b in np.where(okcount_b)[0]: ar_b[b] = ar_by[b][ok_by[b]].mean()
+    gridblk = np.arange(offset+blk/2,offset+blks*blk+blk/2,blk)
+    grid = np.arange(ar_x.shape[0])
+    arsm_x = ip.griddata(gridblk[okcount_b], ar_b[okcount_b], grid, method="cubic", fill_value=0.)
+    oksm_x = (arsm_x != 0.)
+
+    return arsm_x,oksm_x
