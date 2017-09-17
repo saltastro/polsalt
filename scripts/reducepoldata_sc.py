@@ -1,4 +1,4 @@
-import os, sys, glob
+import os, sys, glob, shutil
 print "Run toolprep first";exit()   # replaced with poldir text by toolprep.py
 
 reddir=poldir+'polsalt/'
@@ -19,6 +19,7 @@ obsdate = sys.argv[1]
 
 os.chdir(obsdate)
 if not os.path.isdir('sci'): os.mkdir('sci')
+shutil.copy(scrdir+'script.py','sci')
 os.chdir('sci')
 
 #basic image reductions
