@@ -202,6 +202,7 @@ def list_configurations(infilelist, log):
     
     """
     # set up the observing dictionary
+    arclamplist = ['Ar','CuAr','HgAr','Ne','NeAr','ThAr','Xe']
     obs_dict=obslog(infilelist)
 
     # hack to remove potentially bad data
@@ -248,8 +249,11 @@ def list_configurations(infilelist, log):
                      (obs_tab['BVISITID']==blockvisit)
                )
 
-        objtype = obs_tab['CCDTYPE']          # kn changed from OBJECT: CCDTYPE lists ARC consistently
-        image_dict['arc'] = infilelist[mask * (objtype == 'ARC')]
+        objtype = obs_tab['CCDTYPE']    # kn changed from OBJECT: CCDTYPE lists ARC more consistently
+        lamp = obs_tab['LAMPID']
+        isarc = ((objtype == 'ARC') | np.in1d(lamp,arclamplist))
+                                        # kn added check for arc lamp when CCDTYPE incorrect        
+        image_dict['arc'] = infilelist[mask * isarc]
 
         # if no arc for this config look for a similar one with different BVISITID
         if len(image_dict['arc']) == 0:
@@ -262,7 +266,7 @@ def list_configurations(infilelist, log):
                 log.message("Warning: using arc from different BLOCKID", with_header=False)                
             
         image_dict['flat'] = infilelist[mask * (objtype == 'FLAT')]
-        image_dict['object'] = infilelist[mask * (objtype != 'ARC') *  (objtype != 'FLAT')]
+        image_dict['object'] = infilelist[mask * ~isarc *  (objtype != 'FLAT')]
         if len(image_dict['object']) == 0: continue
         config_dict[(grating, grtilt, camang, blockvisit)] = image_dict
 
