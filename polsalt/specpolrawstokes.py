@@ -26,8 +26,6 @@ import reddir
 # from . import reddir
 datadir = os.path.dirname(inspect.getfile(reddir)) + "/data/"
 np.set_printoptions(threshold=np.nan)
-debug = True
-
 
 def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
     """Produces an unnormalized stokes measurement in intensity from
@@ -131,6 +129,10 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
             idx_j = np.where(obs_i == obs)[0]
             i0 = idx_j[0]
             name_n = []
+            if wppat_i[i0].count('NONE'):
+                log.message((('\n     %s  WP Pattern: NONE. Calibration data, skipped') % infilelist[i0]),  \
+                    with_header=False)
+                continue
             if wppat_i[i0].count('UNKNOWN'):
                 if (hsta_i[idx_j] % 2).max() == 0:
                     wppat = "LINEAR"
@@ -196,7 +198,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
     return
 
 
-def create_raw_stokes_file(first_pair_file, second_pair_file, wav0, wavs, output_file, wppat=None):
+def create_raw_stokes_file(first_pair_file, second_pair_file, wav0, wavs, output_file, wppat=None, debug=False):
     """Create the raw stokes file.
 
     Parameters

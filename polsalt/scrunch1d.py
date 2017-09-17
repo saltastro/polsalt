@@ -3,6 +3,7 @@
 # Resample data into new bins, preserving flux
 # New version 150912, much faster
 # New version 170504, fixed case where output bin coverage is larger than input bin coverage
+# New version 170909, again fixed case where output bin coverage is larger than input bin coverage
 
 import os, sys, time, glob, shutil
 import numpy as np
@@ -25,6 +26,8 @@ def scrunch1d(input,binedge):
     iamax = int(binedge[ixmax])
     x_s = np.append(binedge[okxedge],range(int(np.ceil(binedge[ixmin])),iamax+1))
     x_s,argsort_s = np.unique(x_s,return_index=True)
+    x_s = np.maximum(x_s,0.)                            # 20170909: deal with edge of array
+    x_s = np.minimum(x_s,na)                            # 20170909: deal with edge of array
     ia_s = x_s.astype(int)
     ix_s = np.append(np.arange(ixmin,ixmax+1),-1*np.ones(iamax-iamin+1))[argsort_s].astype(int)
     while (ix_s==-1).sum():
@@ -35,6 +38,7 @@ def scrunch1d(input,binedge):
 # divide data into subbins, preserving flux
     ix_x = np.zeros(nx+1).astype(int)
     s_x = np.zeros(nx+1).astype(int)
+
     input_s = input_a[ia_s[:-1]]*(x_s[1:] - x_s[:-1])
     ix_x[ixmin:(ixmax+1)], s_x[ixmin:(ixmax+1)] = np.unique(ix_s,return_index=True)
     ns_x = s_x[1:] - s_x[:-1]
