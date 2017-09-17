@@ -1,17 +1,15 @@
 import os, sys, glob
-reddir = '/d/freyr/Synched/software/SALT/polsaltcurrent/polsalt/'
-scrdir = '/d/freyr/Synched/software/SALT/polsaltcurrent/scripts/'
-poldir = '/d/freyr/Synched/software/SALT/polsaltcurrent/'
+print "Run toolprep first";exit()   # replaced with poldir text by toolprep.py
+
+reddir=poldir+'polsalt/'
+scrdir=poldir+'scripts/'
 sys.path.extend((reddir,scrdir,poldir))
 
 datadir = reddir+'data/'
 import numpy as np
 from astropy.io import fits as pyfits
-
-# np.seterr(invalid='raise')
-
+from specpolview import printstokes
 from imred import imred
-
 from specpolwavmap import specpolwavmap
 from specpolextract_sc import specpolextract_sc
 from specpolrawstokes import specpolrawstokes
@@ -25,18 +23,15 @@ os.chdir('sci')
 
 #basic image reductions
 infilelist = sorted(glob.glob('../raw/P*fits'))
-
 imred(infilelist, './', datadir+'bpm_rss_11.fits', crthresh=False, cleanup=True)
 
 #basic polarimetric reductions
-# debug=True
-debug=False
 logfile='specpol'+obsdate+'.log'
 
 #wavelength map
 infilelist = sorted(glob.glob('m*fits'))
 linelistlib=""
-#specpolwavmap(infilelist, linelistlib=linelistlib, logfile=logfile)
+specpolwavmap(infilelist, linelistlib=linelistlib, logfile=logfile)
 
 #background subtraction and extraction
 infilelist = sorted(glob.glob('wm*fits'))
@@ -50,4 +45,4 @@ specpolrawstokes(infilelist, logfile=logfile)
 
 #final stokes
 infilelist = sorted(glob.glob('*_h*.fits'))
-specpolfinalstokes(infilelist, logfile=logfile, debug=debug)
+specpolfinalstokes(infilelist, logfile=logfile)
