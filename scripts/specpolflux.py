@@ -52,7 +52,7 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
   # Find fluxdb files already in this directory
     fluxdbtab = Table(names=['no','OBJECT']+confitemlist,        \
                dtype=[int,'S'+str(namelen),'S6',float,float])
-    fluxdblist = sorted(glob.glob('*fluxdb.txt'))
+    fluxdblist = sorted(glob.glob('fluxdb*.txt'))
     olddbentries = len(fluxdblist)
     for e,dbfile in enumerate(fluxdblist):        
         confdat_d = np.genfromtxt(dbfile,usecols=2,comments='?', \
@@ -121,7 +121,7 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         wav_F = np.append(wav_F,wav_w[-1])
         fluxcal_F = np.insert(fluxcal_F,0,fluxcal_F[0]-fluxcalslope_F[0]*(wav_F[1]-wav_F[0]))
         fluxcal_F = np.append(fluxcal_F,fluxcal_F[-1]+fluxcalslope_F[-1]*(wav_F[-1]-wav_F[-2]))
-        fluxdbfile = calspstname_s[s]+'_c'+str(config)+'_fluxdb.txt'
+        fluxdbfile = 'fluxdb_'+calspstname_s[s]+'_c'+str(config)+'.txt'
         hdr = ("OBJECT: "+object+"\nGRATING: %s \nARTIC: %s \nGRANG: %s" \
             % (grating,grang,artic))
         np.savetxt(fluxdbfile, np.vstack((wav_F,fluxcal_F)).T,fmt="%8.2f %12.3e ",header=hdr)
