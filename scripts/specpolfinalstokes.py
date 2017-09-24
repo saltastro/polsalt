@@ -18,12 +18,13 @@ from iraf import pysalt
 from saltobslog import obslog
 from saltsafelog import logging
 
+polsaltdir = '/'.join(os.path.realpath(__file__).split('/')[:-2])
+datadir = polsaltdir+'/polsalt/data/'
+sys.path.extend((polsaltdir+'/polsalt/',))
+
 from specpolutils import datedfile, datedline
 from specpolview import wtavstokes, printstokes
 from specpolflux import specpolflux
-
-import reddir
-datadir = os.path.dirname(inspect.getfile(reddir))+"/data/"
 
 np.set_printoptions(threshold=np.nan)
 
@@ -508,12 +509,12 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                     log.message(open('tmp.log').read(), with_header=False)
                     os.remove('tmp.log')
 
-                # save final stokes fits file for this observation
+                # save final stokes fits file for this observation.  Strain out nans.
                     infile = infilelist[rawlist[comblist[k][0]][0]]
                     hduout = pyfits.open(infile)
-                    hduout['SCI'].data = stokes_Fw.astype('float32').reshape((3,1,-1))
+                    hduout['SCI'].data = np.nan_to_num(stokes_Fw.astype('float32').reshape((3,1,-1)))
                     hduout['SCI'].header['CTYPE3'] = 'I,Q,U'
-                    hduout['VAR'].data = var_Fw.astype('float32').reshape((4,1,-1))
+                    hduout['VAR'].data = np.nan_to_num(var_Fw.astype('float32').reshape((4,1,-1)))
                     hduout['VAR'].header['CTYPE3'] = 'I,Q,U,QU'
 
                     hduout['BPM'].data = bpm_Fw.astype('uint8').reshape((3,1,-1))
