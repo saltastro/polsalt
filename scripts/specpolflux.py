@@ -18,15 +18,16 @@ from astropy.io import fits as pyfits
 from astropy.table import Table,unique
 from scipy.interpolate import interp1d
 
+polsaltdir = '/'.join(os.path.realpath(__file__).split('/')[:-2])
+datadir = polsaltdir+'/polsalt/data/'
+sys.path.extend((polsaltdir+'/polsalt/',))
+
 from pyraf import iraf
 from iraf import pysalt
 from saltobslog import obslog
 from saltsafelog import logging
 from scrunch1d import scrunch1d
 
-import reddir
-# from . import reddir
-DATADIR = os.path.dirname(inspect.getfile(reddir)) + "/data/"
 np.set_printoptions(threshold=np.nan)
 debug = True
 
@@ -43,7 +44,7 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
 
     """
   # Info on CAL_SPST files:
-    calspstname_s,calspstfile_s=np.loadtxt(DATADIR+"spst_filenames.txt",    \
+    calspstname_s,calspstfile_s=np.loadtxt(datadir+"spst_filenames.txt",    \
         dtype=str,usecols=(0,1),unpack=True)
     namelen = max(map(len,calspstname_s))
 
@@ -171,6 +172,7 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
             fluxcalhistory += " "+fluxdblist[e]
             fluxcallog += "  "+str(e+1)+" "+fluxdblist[e]
         fluxcal_w /= fluxdbentry_e.shape[0]
+        fluxcal_w = (np.nan_to_num(fluxcal_w))
         hdul['SCI'].data *= fluxcal_w
         hdul['SCI'].header['CUNIT3'] = cunitfluxed
         hdul['VAR'].data *= fluxcal_w**2
