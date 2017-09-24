@@ -19,7 +19,7 @@ plt.ioff()
 np.set_printoptions(threshold=np.nan)
 
 #---------------------------------------------------------------------------------------------
-def specpolview(infile_list, bin='unbin', save = '', debug=False):
+def specpolview(infile_list, bincode='unbin', saveoption = '', debug_out=False):
     """View output results
 
     Parameters
@@ -27,31 +27,33 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
     infile_list: list
        one or more _stokes.fits files
 
-    bin  
+    bincode  
        unbin, nnA (nn Angstroms), nn% (binned to %)
 
-   save  
+   saveoption  
        '' (text to terminal), text (text to file), plot (terminal plot and pdf file), textplot (both)
 
     """
+
     obss = len(infile_list)
     bintype = 'unbin'
     errbars = False
-    if len(bin):
-        if bin.count('%'): 
+    if len(bincode):
+        if bincode.count('%'): 
             bintype = 'percent'
-            errbin = float(bin[ :bin.index('%')])
-        elif bin.count('A'): 
+            errbin = float(bincode[ :bincode.index('%')])
+        elif bincode.count('A'): 
             bintype = 'wavl'
-            blk = int(bin[ :bin.index('A')])
-        elif bin != 'unbin': 
+            blk = int(bincode[ :bincode.index('A')])
+        elif bincode != 'unbin': 
             print "unrecognized binning option, set to unbinned"
             bintype = 'unbin'
-    if len(bin)>6:
-        errbars = (bin[-6:]=="errors")
+    if len(bincode)>6:
+        errbars = (bincode[-6:]=="errors")
 
-    savetext = (save.count('text')>0)
-    saveplot = (save.count('plot')>0)
+    debug = saveoption.count('debug')>0
+    savetext = (saveoption.count('text')>0) | debug
+    saveplot = (saveoption.count('plot')>0) | debug
     plotcolor_o = ['b','g','r','c','m','y','k']
     askpltlim = True
     tcenter = 0.
@@ -173,7 +175,7 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
                 wgap0_g = wgap0_g[0:wgap1_g.shape[0]]
                 isbad_g = ((wgap1_g - wgap0_g) > allowedgap)
                 stokes_sw, err_sw = viewstokes(stokes_Sw,var_Sw,ok_w,tcenter)
-                binvar_w = err_sw[1]**2
+                binvar_w = nerr_sw[1]**2
                 ww = -1; b = 0;  bin_w = -1*np.ones((wavs))
                 while (bpm_Sw[0,ww+1:]==0).sum() > 0:
                     w = ww+1+np.where(bpm_Sw[0,ww+1:]==0)[0][0]
@@ -190,11 +192,11 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
                     b += 1
                 bin_w[bpm_Sw[0]>0] = -1
                 Bins  = b
-                if debug: 
-                    np.savetxt(name+'_'+bin+'_binid.txt',np.vstack((wav_w,bin_w)).T,fmt="%8.2f %5i")
+                if debug_out: 
+                    np.savetxt(name+'_'+bincode+'_binid.txt',np.vstack((wav_w,bin_w)).T,fmt="%8.2f %5i")
 
         # calculate binned data. _V = possible Bins, _v = good bins
-            bin_V = np.arange(Bins)
+            bin_V = np.arange(Bins)                   
             bin_Vw = (bin_V[:,None] == bin_w[None,:])
             stokes_SV = (stokes_Sw[:,None,:]*bin_Vw).sum(axis=2)
             var_SV = (var_Sw[:,None,:]*bin_Vw).sum(axis=2) 
@@ -208,9 +210,8 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
             stokes_sV, err_sV = viewstokes(stokes_SV,var_SV,ok_V,tcenter)          
             stokes_sv, err_sv = stokes_sV[:,ok_V], err_sV[:,ok_V]
             for S in range(1,stokess):
-                if debug: np.savetxt('errbar_'+str(S)+'.txt', \
-                    np.vstack((wav_v,stokes_SV[S-1],var_SV[S-1],stokes_sv[S-1],err_sv[S-1],dwavleft_v,dwavright_v)).T,  \
-                    fmt = "%10.4f")
+                if debug_out: np.savetxt('errbar_'+str(S)+'.txt', \
+                    np.vstack((wav_v,stokes_sv[S-1],err_sv[S-1],dwavleft_v,dwavright_v)).T,fmt = "%10.4f")
                 if errbars:
                     plot_S[S].errorbar(wav_v,stokes_sv[S-1],color=plotcolor,fmt='.',    \
                         yerr=err_sv[S-1],xerr=(dwavleft_v,dwavright_v),capsize=0)
@@ -220,7 +221,7 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
       # Printing for observation
         textfile = sys.stdout
         if savetext: 
-            textfile = open(name+'_'+bin+'.txt','ab')
+            textfile = open(name+'_'+bincode+'.txt','ab')
             textfile.truncate(0)
         else: print >>textfile
 
@@ -263,7 +264,7 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
         if tags:                 # raw and final stokes files
             objlist = sorted(list(set(namelist[b].split("_")[0] for b in range(obss))))
             confcyclelist = sorted(list(set(namelist[b].replace("_stokes","").split("_",1)[-1] for b in range(obss))))
-            plotfile = '_'.join(objlist+confcyclelist+list([plotname,bin]))+'.pdf'
+            plotfile = '_'.join(objlist+confcyclelist+list([plotname,bincode]))+'.pdf'
         else:                               # diffsum files from diffsum
             plotfile = namelist[0]+'-'+namelist[-1][-4:]+'.pdf'
         plt.savefig(plotfile,orientation='portrait')
@@ -414,9 +415,14 @@ def printstokes(stokes_Sw,var_Sw,wav_w,textfile=sys.stdout,tcenter=0,isfluxed=Fa
 #---------------------------------------------------------------------------------------------
  
 if __name__=='__main__':
-    infilelist=[x for x in sys.argv[1:] if x.count('.fits')]
-    kwargs = dict(x.split('=', 1) for x in sys.argv[1:] if x.count('.fits')==0)  
-    specpolview(infilelist, **kwargs)
+    infile_list=sys.argv[1:]
+    saveoption = ''
+    bincode = 'unbin'
+    if infile_list[-1].count('text') | infile_list[-1].count('plot') | infile_list[-1].count('debug'):
+        saveoption = infile_list.pop()
+    if infile_list[-1][-5:] != '.fits':
+        bincode = infile_list.pop()
+    specpolview(infile_list, bincode, saveoption)
 
     
 
