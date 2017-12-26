@@ -1,5 +1,5 @@
 import os, sys, glob, shutil
-print "Run toolprep first";exit()   # replaced with poldir text by toolprep.py
+poldir = '/d/freyr/Dropbox/software/SALT/polsaltcurrent/'
 
 reddir=poldir+'polsalt/'
 scrdir=poldir+'scripts/'
@@ -15,8 +15,9 @@ from specpolextract_sc import specpolextract_sc
 from specpolrawstokes import specpolrawstokes
 from specpolfinalstokes import specpolfinalstokes
 
+print sys.argv
 obsdate = sys.argv[1]
-
+print obsdate
 os.chdir(obsdate)
 if not os.path.isdir('sci'): os.mkdir('sci')
 shutil.copy(scrdir+'script.py','sci')
@@ -36,9 +37,12 @@ specpolwavmap(infilelist, linelistlib=linelistlib, logfile=logfile)
 
 #background subtraction and extraction
 infilelist = sorted(glob.glob('wm*fits'))
-dyasec = 5.     # star +/-5, bkg= +/-(25-35)arcsec:  2nd order is 9-20 arcsec away
-yoffo = 0.      # optional offset of target (bins) from brightest in O (bottom) image
-specpolextract_sc(infilelist,yoffo,dyasec, logfile=logfile)
+extract = 10.   # star +/-5, bkg= +/-(25-35)arcsec:  2nd order is 9-20 arcsec away
+locate = (-120.,120.)    # science target is brightest target in whole slit
+#locate = (-20.,20.)
+
+specpolextract_sc(infilelist,logfile=logfile,locate=locate,extract=extract)
+#specpolextract_sc(infilelist,logfile=logfile,locate=locate,extract=extract,docomp=True,useoldc=True)
 
 #raw stokes
 infilelist = sorted(glob.glob('e*fits'))

@@ -4,7 +4,7 @@ from scipy.interpolate import interp1d
 from scipy import interpolate as ip
 
 from saltobslog import obslog
-from astropy.table import Table
+from astropy.table import Table,unique
 
 DATADIR = os.path.dirname(__file__) + '/data/'
 
@@ -170,6 +170,60 @@ def rssmodelwave(grating,grang,artic,trkrho,cbin,cols,datobs):
     X = (np.array(range(cols))-cols/2)*cbin/modelcenter
     lam_X = T0+T1*X+T2*(2*X**2-1)+T3*(4*X**3-3*X)
     return lam_X
+
+# ----------------------------------------------------------
+def configmap(infilelist,confitemlist,debug='False'):
+    """general purpose mapper of observing configurations
+
+    Parameters
+    ----------
+    infilelist: list
+        List of filenames 
+    confitemlist: list
+        List of header keywords which define a configuration
+
+    Returns
+    -------
+    obs_i: numpy 1d array
+        observation number (unique object, config) for each file
+    config_i: numpy 1d array
+        config number (unique config) for each file
+    obstab: astropy Table
+        object name and config number for each observation     
+    configtab: astropy Table
+        config items for each config
+     
+    """
+  # create the observation log
+    obsdict = obslog(infilelist)
+    images = len(infilelist)
+
+  # make table of unique configurations
+    confdatlisti = []
+    for i in range(images):
+        confdatlist = []
+        for item in confitemlist:
+            confdatlist.append(obsdict[item][i])
+        confdatlisti.append(confdatlist)
+
+    dtypelist = map(type,confdatlist)           
+    configtab = Table(np.array(confdatlisti),names=confitemlist,dtype=dtypelist) 
+    config_i = np.array([np.where(configtab[i]==unique(configtab))   \
+                        for i in range(images)]).flatten()
+    configtab = unique(configtab)
+                        
+  # make table of unique observations
+    obsdatlisti = []
+    for i in range(images):
+        object = obsdict['OBJECT'][i].replace(' ','')
+        obsdatlisti.append([object, config_i[i]])
+
+    obstab = Table(np.array(obsdatlisti),names=['object','config'],dtype=[str,int])
+    obs_i = np.array([np.where(obstab[i]==unique(obstab))   \
+                        for i in range(images)]).flatten()
+    obstab = unique(obstab)
+                        
+    return obs_i,config_i,obstab,configtab
 # ------------------------------------
 
 def image_number(image_name):
@@ -237,7 +291,7 @@ def list_configurations(infilelist, log):
 
     # create the configurations list
     config_dict={}
-    confdatlist = configmap(obs_tab, config_list=('GRATING', 'GR-ANGLE', 'CAMANG', 'BVISITID'))
+    confdatlist = configmapset(obs_tab, config_list=('GRATING', 'GR-ANGLE', 'CAMANG', 'BVISITID'))
 
     infilelist = np.array(infilelist)
     for grating, grtilt, camang, blockvisit in confdatlist:
@@ -273,7 +327,7 @@ def list_configurations(infilelist, log):
     return config_dict
 # ------------------------------------
 
-def configmap(obs_tab, config_list=('GRATING','GR-ANGLE', 'CAMANG')):
+def configmapset(obs_tab, config_list=('GRATING','GR-ANGLE', 'CAMANG')):
     """Determine how many different configurations are in the list
 
     Parameters

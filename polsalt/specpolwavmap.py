@@ -39,7 +39,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
 
     with logging(logfile, debug) as log:
         log.message('Pysalt Version: '+pysalt.verno, with_header=False)
-      
+        log.message('specpolwavmap version: 20171226', with_header=False)         
         # group the files together
         config_dict = list_configurations(infilelist, log)
         
@@ -187,7 +187,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
                 hdu['BPM'].data[wavmap_orc==0.] = 1 
                 hdu.append(hduwav)
                 for f in ('SCI','VAR','BPM','WAV'): hdu[f].header['CTYPE3'] = 'O,E'
-                hdu.writeto('w'+image,clobber='True')
+                hdu.writeto('w'+image,overwrite='True')
                 log.message('Output file '+'w'+image+'  crs: '+str(iscr_irc[i].sum()), with_header=False)
 
     return
@@ -253,7 +253,7 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
     legy_od = np.zeros((2,2))
 
     lam_X = rssmodelwave(grating,grang,artic,trkrho,cbin,cols,date)
-    np.savetxt("lam_X_"+str(image_no)+".txt",lam_X,fmt="%8.3f")
+#    np.savetxt("lam_X_"+str(image_no)+".txt",lam_X,fmt="%8.3f")
     C_f = np.polynomial.legendre.legfit(np.arange(cols),lam_X,3)[::-1]
 
     for o in (0,1):
@@ -300,7 +300,7 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
 #                guesstype = 'rss'
             else:
                 guesstype = 'rss'            
-            hduarc.writeto(arcimage,clobber=True)
+            hduarc.writeto(arcimage,overwrite=True)
                  
             specidentify(arcimage, lampfile, dbfilename, guesstype=guesstype,
                 guessfile=guessfilename, automethod=automethod,  function=function,  order=order,
@@ -314,7 +314,7 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
         #soldict = sr.entersolution(dbfilename)
         #wavmap_yc = wavemap(hduarc, soldict, caltype='line', function=function, 
         #          order=order,blank=0, nearest=True, array_only=True,
-        #          clobber=True, log=log, verbose=True)
+        #          overwrite=True, log=log, verbose=True)
                   
         # put curvature back in, zero out areas beyond slit and wavelength range (will be flagged in bpm)
         if debug: np.savetxt("drow_wmap_oc.txt",drow_oc.T,fmt="%8.3f %8.3f")
@@ -409,10 +409,17 @@ def wave_map(dbfilename, edgerow_d, rows, cols, ystart, order=3, log=None):
         legy_Y = np.delete(legy_Y, argYbad,axis=0)
         legcof_lY = np.delete(legcof_lY, argYbad,axis=1)
         cofrows = legy_Y.shape[0]
+        mediancof_l = np.median(legcof_lY,axis=1)
+        rms_l = np.sqrt(np.median((legcof_lY - mediancof_l[:,None])**2,axis=1))
+
+    # if, still, rms/wav in L_0 > .05% (5x from expected curvature), revert to ystart constant
+        log.message(('  '+dbfilename+' rms: %6.3f%%' % (100.*rms_l[0]/mediancof_l[0])), with_header=False)
+        if rms_l[0]/mediancof_l[0] > .0005: 
+            cofrows=1
 
     if cofrows < 5:
-    # assume this is short MOS slit: use ystart solution for all rows, undo the slit edge settings
-        log.message('FEW DATABASE ROWS, ASSUME MOS, USE START' , with_header=False)                    
+    # ignore spectral curvature: use ystart solution for all rows, undo the slit edge settings
+        log.message('TOO FEW USABLE DATABASE ROWS, USE CONSTANT, CENTER ROW' , with_header=False)                    
         legcof_l = legcof_lY[:,legy_Y.astype(int)==ystart].ravel()
         wavmap_yc = np.tile(np.polynomial.legendre.legval(xfit_c,legcof_l)[:,None],rows/2).T
         edgerow_d = 0,rows/2
@@ -433,5 +440,6 @@ def wave_map(dbfilename, edgerow_d, rows, cols, ystart, order=3, log=None):
         for y in range(rows/2):
             wavmap_yc[y] = np.polynomial.legendre.legval(xfit_c,legcof_ly[:,y])
         legy_d = legy_Y.min(),legy_Y.max()
+    wavmap_yc[(wavmap_yc < 3000.) | (wavmap_yc > 10000.)] = 0
 
     return wavmap_yc, cofrows, legy_d, edgerow_d

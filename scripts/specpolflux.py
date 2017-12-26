@@ -15,7 +15,7 @@ import inspect
 
 import numpy as np
 from astropy.io import fits as pyfits
-from astropy.table import Table,unique
+from astropy.table import Table
 from scipy.interpolate import interp1d
 
 polsaltdir = '/'.join(os.path.realpath(__file__).split('/')[:-2])
@@ -27,6 +27,7 @@ from iraf import pysalt
 from saltobslog import obslog
 from saltsafelog import logging
 from scrunch1d import scrunch1d
+from specpolutils import configmap
 
 np.set_printoptions(threshold=np.nan)
 debug = True
@@ -43,6 +44,8 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         Name of file for logging
 
     """
+    if len(glob.glob('specpol*.log')): logfile=glob.glob('specpol*.log')[0]
+    fluxcal_w = np.zeros(0)
   # Info on CAL_SPST files:
     calspstname_s,calspstfile_s=np.loadtxt(datadir+"spst_filenames.txt",    \
         dtype=str,usecols=(0,1),unpack=True)
@@ -135,7 +138,7 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
   # do fluxcal on listed stokes.fits files
     if len(fluxdbtab)==0:
         printstdlog('\n    No fluxdb data available', logfile)
-        return
+        return fluxcal_w
 
     if (type(infilelist) is str): infilelist = [infilelist,]
         
@@ -150,9 +153,15 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         if 'CUNIT3' in hdul['SCI'].header:
             if hdul['SCI'].header['CUNIT3'].replace(' ','') ==cunitfluxed:
                 printstdlog(('\n    %s already flux calibrated' % infilelist[iobs]), logfile)
-                continue                   
-        fluxdbentry_e = np.where(configtab[obs]==fluxdbconftab)[0]
-        if fluxdbentry_e.shape[0] == 0:
+                continue 
+        
+        fluxdbentry_e = []
+        for e in range(len(fluxdbconftab)):
+            if ((fluxdbconftab[e]['GRATING']==configtab[obs]['GRATING']) &  \
+                (fluxdbconftab[e]['CAMANG']==configtab[obs]['CAMANG'])  &  \
+                (abs(fluxdbconftab[e]['GR-ANGLE']-configtab[obs]['GR-ANGLE']) < 0.1)):
+                fluxdbentry_e.append(e)
+        if len(fluxdbentry_e) == 0:
             printstdlog(('\n    No flux calibration available for  %s' % infilelist[iobs]), logfile)
             continue
 
@@ -171,77 +180,26 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
             fluxcal_w += interp1d(wav_F,fluxcal_F,bounds_error=False)(wav_w)
             fluxcalhistory += " "+fluxdblist[e]
             fluxcallog += "  "+str(e+1)+" "+fluxdblist[e]
-        fluxcal_w /= fluxdbentry_e.shape[0]
+        fluxcal_w /= len(fluxdbentry_e)
         fluxcal_w = (np.nan_to_num(fluxcal_w))
         hdul['SCI'].data *= fluxcal_w
         hdul['SCI'].header['CUNIT3'] = cunitfluxed
         hdul['VAR'].data *= fluxcal_w**2
         hdul['VAR'].header['CUNIT3'] = cunitfluxed
+        hdul['COV'].data *= fluxcal_w**2
+        hdul['COV'].header['CUNIT3'] = cunitfluxed
         hdul[0].header.add_history(fluxcalhistory)
-        hdul.writeto(infilelist[iobs],clobber=True)
+        hdul.writeto(infilelist[iobs],overwrite=True)
 
         printstdlog((('\n    %s '+fluxcallog) % infilelist[iobs]), logfile)
 
-    return
+    return fluxcal_w
 # ----------------------------------------------------------
 def printstdlog(string,logfile):
     print string
     print >>open(logfile,'a'), string
     return
 
-# ----------------------------------------------------------
-def configmap(infilelist,confitemlist,debug='False'):
-    """general purpose mapper of observing configurations
-
-    Parameters
-    ----------
-    infilelist: list
-        List of filenames 
-    confitemlist: list
-        List of header keywords which define a configuration
-
-    Returns
-    -------
-    obs_i: numpy 1d array
-        observation number (unique object, config) for each file
-    config_i: numpy 1d array
-        config number (unique config) for each file
-    obstab: astropy Table
-        object name and config number for each observation     
-    configtab: astropy Table
-        config items for each config
-     
-    """
-  # create the observation log
-    obsdict = obslog(infilelist)
-    images = len(infilelist)
-
-  # make table of unique configurations
-    confdatlisti = []
-    for i in range(images):
-        confdatlist = []
-        for item in confitemlist:
-            confdatlist.append(obsdict[item][i])
-        confdatlisti.append(confdatlist)
-
-    dtypelist = map(type,confdatlist)           
-    configtab = Table(np.array(confdatlisti),names=confitemlist,dtype=dtypelist) 
-    config_i = np.array([np.where(configtab[i]==unique(configtab))   \
-                        for i in range(images)]).flatten()
-    configtab = unique(configtab)
-                        
-  # make table of unique observations
-    obsdatlisti = []
-    for i in range(images):
-        object = obsdict['OBJECT'][i].replace(' ','')
-        obsdatlisti.append([object, config_i[i]])
-
-    obstab = Table(np.array(obsdatlisti),names=['object','config'],dtype=[str,int])
-    obs_i = np.array([np.where(obstab[i]==unique(obstab))   \
-                        for i in range(images)]).flatten()
-    obstab = unique(obstab)
-                        
-    return obs_i,config_i,obstab,configtab
 # ----------------------------------------------------------
 
 if __name__=='__main__':
