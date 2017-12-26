@@ -11,6 +11,13 @@ import os, sys, glob, shutil, inspect
 
 import numpy as np
 import pyfits
+
+polsaltdir = '/'.join(os.path.realpath(__file__).split('/')[:-2])
+datadir = polsaltdir+'/polsalt/data/'
+sys.path.extend((polsaltdir+'/polsalt/',))
+
+import specpolfinalstokes as spf
+
 import matplotlib
 matplotlib.use('PDF')
 from matplotlib import pyplot as plt
@@ -19,42 +26,63 @@ plt.ioff()
 np.set_printoptions(threshold=np.nan)
 
 #---------------------------------------------------------------------------------------------
-def specpolview(infile_list, bin='unbin', save = '', debug=False):
-    """View output results
+def specpolview(infile_list, **kwargs):
+    """View Stokes output results
 
     Parameters
     ----------
     infile_list: list
        one or more _stokes.fits files
 
-    bin  
-       unbin, nnA (nn Angstroms), nn% (binned to %)
-
-   save  
-       '' (text to terminal), text (text to file), plot (terminal plot and pdf file), textplot (both)
-
+    bin=    unbin (default)
+            nnA (nn Angstroms)
+            nn% (binned to %)
+    errors= False(default) 
+            True (plot errorbars)
+    connect= '' (default) (if errors False, connect points)
+            hist (if binned, use histogram connection)
+    type=   Ipt (default) (unbinned intensity/flux, binned % pol, deg PA)
+            Iqu (unbinned intensity/flux, binned %q, %u, with optional rotate)
+    save=   '' (default) (text to terminal)
+            text (text to file)
+            plot (terminal plot and pdf file)
+            textplot (both)
+    debug=: False (default)
+            True (debug output)
     """
     obss = len(infile_list)
-    bintype = 'unbin'
-    errbars = False
-    if len(bin):
-        if bin.count('%'): 
-            bintype = 'percent'
-            errbin = float(bin[ :bin.index('%')])
-        elif bin.count('A'): 
-            bintype = 'wavl'
-            blk = int(bin[ :bin.index('A')])
-        elif bin != 'unbin': 
-            print "unrecognized binning option, set to unbinned"
-            bintype = 'unbin'
-    if len(bin)>6:
-        errbars = (bin[-6:]=="errors")
+    bin = kwargs.pop('bin','unbin')
+    errorbars = (kwargs.pop('errors','False') == 'True')
+    connect = kwargs.pop('connect','')
+    plottype = kwargs.pop('type','Ipt')
+    save = kwargs.pop('save','')
+    debug = (kwargs.pop('debug','False') == 'True')
 
+    bintype = bin
+    if bin.count('%'): 
+        bintype = 'percent'
+        errbin = float(bin[ :bin.index('%')])
+    elif bin.count('A'): 
+        bintype = 'wavl'
+        blk = int(bin[ :bin.index('A')])
+    elif (bin != 'unbin'): 
+        print "unrecognized binning option, set to unbinned"
+        bintype = 'unbin'
+    if (len(bin)>6):              # for backwards compatibility
+        errorbars = (bin[-6:]=="errors")
+    if (connect not in ('','hist')): 
+        print "unrecognized connect option"
+        exit()
+    if (plottype not in ('Ipt','Iqu')): 
+        print "unrecognized type option"
+        exit()
     savetext = (save.count('text')>0)
     saveplot = (save.count('plot')>0)
+
     plotcolor_o = ['b','g','r','c','m','y','k']
     askpltlim = True
     tcenter = 0.
+    trotate = 0.
     cunitfluxed = 'erg/s/cm^2/Ang'          # header keyword CUNIT3 if data is already fluxed 
  
     for obs in range(obss):
@@ -63,6 +91,7 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
         obsdate = hdul[0].header['DATE-OBS']
         stokes_Sw = hdul['SCI'].data[:,0,:]
         var_Sw = hdul['VAR'].data[:,0,:]
+        covar_Sw = hdul['COV'].data[:,0,:]
         bpm_Sw = hdul['BPM'].data[:,0,:]
         isfluxed=False
         if 'CUNIT3' in hdul['SCI'].header:
@@ -84,29 +113,34 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
             if stokeslist[1]=="S": plotname = name.split("_")[-2]
             else: plotname = 'stokes'
             stokeslist[1:] = ('  % '+stokeslist[s] for s in range(1,stokess))
-            if stokess > 2:
+            if ((plottype == 'Ipt') | (plottype == 'IPt')):
                 if 'PATYPE' in hdul[0].header:
                     pa_type = hdul[0].header['PATYPE']
                 else:
                     pa_type = hdul[0].header['POLCAL'].split(" ")[0]    # old style
+                plot_S[2].set_ylabel(pa_type+' PA (deg)')
+            if (plottype == 'Ipt'):
                 stokeslist[1:3] = '  % P', (pa_type[:3]+' T')   
                 plot_S[1].set_ylabel('Linear Polarization (%)')
-                plot_S[2].set_ylabel(pa_type+' PA (deg)')         
+            if (plottype == 'Iqu'):
+                stokeslist[1:3] = ('  % Q', ' % U')   
+                plot_S[1].set_ylabel('Stokes Q (%)')
+                plot_S[2].set_ylabel('Stokes U (%)')         
             fig.set_size_inches((8.5,11))
             fig.subplots_adjust(left=0.175)
             namelist=[]
 
-    # calculate, print means (stokes wtd in norm space by 1/mean var)
+    # calculate, print means (stokes average in unnorm space)
         hassyserr = hdul[0].header.has_key('SYSERR')
 
-        wtavstokes_s, wtavvar_s, wtavwav = wtavstokes(stokes_Sw[:,ok_w],var_Sw[:,ok_w],wav_w[ok_w]) 
-        wtavstokes_S = np.insert(wtavstokes_s,0,1.)
-        wtavvar_S = np.insert(wtavvar_s,0,1.)
+        avstokes_s, avvar_s, avwav = avstokes(stokes_Sw[:,ok_w],var_Sw[:-1][:,ok_w],covar_Sw[:,ok_w],wav_w[ok_w]) 
+        avstokes_S = np.insert(avstokes_s,0,1.)
+        avvar_S = np.insert(avvar_s,0,1.)
 
         print ("\n%16s %16s  Wtd mean   " % (name,obsdate)),
         if hassyserr: print ('Syserr: %8.3f' % hdul[0].header['SYSERR']),
         print           
-        printstokes(wtavstokes_S,wtavvar_S,wtavwav)
+        printstokes(avstokes_S,avvar_S,avwav)
  
         plotcolor = plotcolor_o[obs % len(plotcolor_o)]
     # plot intensity
@@ -135,17 +169,37 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
                 if stokess>2:
                     itbottom,ittop = [2*(stokess-3),2*(stokess-3)+1]
                     if (ismanlim_i[itbottom] != ismanlim_i[ittop]): 
-                        print "set PA limits for either both or neither top and bottom"
+                        print "set bottom plot limits for either both or neither top and bottom"
                         continue
-                    if ismanlim_i[itbottom]:
-                        tcenter = np.radians((float(ylimlisti[itbottom]) + float(ylimlisti[ittop]))/2.)
+                    if ((plottype == 'Ipt') | (plottype == 'IPt')):
+                        if ismanlim_i[itbottom]:
+                            tcenter = np.radians((float(ylimlisti[itbottom]) + float(ylimlisti[ittop]))/2.)
+                    if ((plottype == 'Iqu') | (plottype == 'IQU')):
+                        trotate = float(raw_input('\nOptional PA zeropoint (default 0): ') or '0')
+                        if trotate:
+                            plot_S[1].set_ylabel('Stokes Q (%%)  PA0= %7.1f deg' % trotate)
+                            plot_S[2].set_ylabel('Stokes U (%%)  PA0= %7.1f deg' % trotate)  
+                        if (len(ismanlim_i) == 2):
+                            ismanlim_i = np.tile(ismanlim_i,2)
+                            ylimlisti += ylimlisti
+                                                       
                 askpltlim = False
                      
       # assemble data
-        if bintype == 'unbin':
-            stokes_sw, err_sw = viewstokes(stokes_Sw,var_Sw,ok_w,tcenter)
+        if trotate:
+            stokes_Sw,var_Sw,covar_Sw = spf.specpolrotate(stokes_Sw,var_Sw,covar_Sw,-trotate)
 
-        # show gaps in plot, remove them from text
+        if bintype == 'unbin':
+            stokes_sw = np.zeros((stokess-1,wavs))
+            err_sw = np.zeros_like(stokes_sw)
+            if plottype == 'Ipt':                                       # _s = %p, PA (deg)
+                stokes_sw[:,ok_w], err_sw[:,ok_w] =         \
+                    viewstokes(stokes_Sw[:,ok_w],var_Sw[:,ok_w],tcenter=tcenter)  
+            elif plottype =='Iqu':                                      # _s = %q, %u
+                stokes_sw[:,ok_w] = 100.*stokes_Sw[1:,ok_w]/stokes_Sw[0,ok_w]
+                err_sw[:,ok_w] = 100.*np.sqrt(var_Sw[1:-1,ok_w]/stokes_Sw[0,ok_w]**2)
+
+          # show gaps in plot, remove them from text
             for S in range(1,stokess):
                 ww = -1; 
                 while (bpm_Sw[S,ww+1:]==0).sum() > 0:
@@ -173,18 +227,21 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
                 wgap0_g = wgap0_g[0:wgap1_g.shape[0]]
                 isbad_g = ((wgap1_g - wgap0_g) > allowedgap)
                 stokes_sw, err_sw = viewstokes(stokes_Sw,var_Sw,ok_w,tcenter)
-                binvar_w = err_sw[1]**2
+                binvar_w = err_sw[0]**2
+                bincovar_w = np.zeros_like(binvar_w)
+                bincovar_w[ok_w] = binvar_w[ok_w]*covar_Sw[1,ok_w]/var_Sw[1,ok_w]
                 ww = -1; b = 0;  bin_w = -1*np.ones((wavs))
                 while (bpm_Sw[0,ww+1:]==0).sum() > 0:
                     w = ww+1+np.where(bpm_Sw[0,ww+1:]==0)[0][0]
-                    cumsvar_w = np.cumsum(binvar_w[w:]*(bpm_Sw[0,w:]==0))    \
+                    cumsvar_W = np.cumsum((binvar_w[w:]+2.*bincovar_w[w:])*(bpm_Sw[0,w:]==0))    \
                                 /np.cumsum((bpm_Sw[0,w:]==0))**2
-                    err_w = np.sqrt(cumsvar_w)
-                    if debug: np.savetxt("err_"+str(w)+".txt",err_w,fmt="%10.3e")
+                    err_W = np.sqrt(cumsvar_W)
+                    if debug: np.savetxt("err_"+str(w)+".txt",      \
+                        np.vstack((wav_w[w:],bpm_Sw[0,w:],binvar_w[w:],bincovar_w[w:],err_W)).T,fmt="%10.3e")
                     ww = wavs                                       # stopping point override: end
                     nextbadgap = np.where(isbad_g & (wgap0_g > w))[0]
                     if nextbadgap.size: ww = wgap0_g[nextbadgap[0]] - 1   # stopping point override: before bad gap
-                    dw = np.where(err_w[:ww-w] < errbin)[0]
+                    dw = np.where(err_W[:ww-w] < errbin)[0]
                     if dw.size: ww = w + dw[0]                      # err goal is reached first
                     bin_w[w:ww+1] = b
                     b += 1
@@ -197,25 +254,43 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
             bin_V = np.arange(Bins)
             bin_Vw = (bin_V[:,None] == bin_w[None,:])
             stokes_SV = (stokes_Sw[:,None,:]*bin_Vw).sum(axis=2)
-            var_SV = (var_Sw[:,None,:]*bin_Vw).sum(axis=2) 
+            var_SV = ((var_Sw[:stokess,None,:] + 2.*covar_Sw[:,None,:])*bin_Vw).sum(axis=2)  
             bpm_SV = ((bpm_Sw[:,None,:]*bin_Vw).sum(axis=2)==bin_Vw.sum(axis=1)).astype(int)
             ok_SV = (bpm_SV == 0)
             ok_V = ok_SV.all(axis=0)
             bin_vw = bin_Vw[ok_V]
             wav_v = (wav_w[None,:]*bin_vw).sum(axis=1)/bin_vw.sum(axis=1)
-            dwavleft_v = wav_v - wav_w[(np.argmax((wav_w[None,:]*bin_vw)>0,axis=1))] + dwav/2.
+            dwavleft_v = wav_v - wav_w[(np.argmax((wav_w[None,:]*bin_vw)>0,axis=1))-1] + dwav/2.
             dwavright_v = wav_w[wavs-1-(np.argmax((wav_w[None,::-1]*bin_vw[:,::-1])>0,axis=1))] - wav_v - dwav/2.
-            stokes_sV, err_sV = viewstokes(stokes_SV,var_SV,ok_V,tcenter)          
-            stokes_sv, err_sv = stokes_sV[:,ok_V], err_sV[:,ok_V]
+            if plottype == 'Ipt':                                       # _s = %p, PA (deg)
+                stokes_sv, err_sv = viewstokes(stokes_SV[:,ok_V],var_SV[:,ok_V],tcenter=tcenter)   
+            elif plottype =='Iqu':                                      # _s = %q, %u
+                stokes_sv = 100.*stokes_SV[1:,ok_V]/stokes_SV[0,ok_V]
+                err_sv = 100.*np.sqrt(var_SV[1:,ok_V]/stokes_SV[0,ok_V]**2)
+      
+            lwdefault = matplotlib.rcParams['lines.linewidth']
             for S in range(1,stokess):
                 if debug: np.savetxt('errbar_'+str(S)+'.txt', \
-                    np.vstack((wav_v,stokes_SV[S-1],var_SV[S-1],stokes_sv[S-1],err_sv[S-1],dwavleft_v,dwavright_v)).T,  \
-                    fmt = "%10.4f")
-                if errbars:
-                    plot_S[S].errorbar(wav_v,stokes_sv[S-1],color=plotcolor,fmt='.',    \
-                        yerr=err_sv[S-1],xerr=(dwavleft_v,dwavright_v),capsize=0)
-                else:
-                    plot_S[S].plot(wav_v,stokes_sv[S-1],color=plotcolor,label=label)
+                    np.vstack((wav_v,stokes_SV[S-1],var_SV[S-1],stokes_sv[S-1],err_sv[S-1],   \
+                    dwavleft_v,dwavright_v)).T, fmt = "%10.4f")
+                if ((connect != 'hist') & (not errorbars)):
+                    if (bintype=='unbin'): marker = 'none'
+                    else: marker = '.'
+                    plot_S[S].plot(wav_v,stokes_sv[S-1],color=plotcolor,marker='.',label=label)
+                if errorbars:                                       # plot y error bars
+                    plot_S[S].errorbar(wav_v,stokes_sv[S-1],yerr=err_sv[S-1],   \
+                        color=plotcolor,marker='None',linewidth=0.,elinewidth=lwdefault,capsize=0)     
+                if (connect == 'hist'):                             # plot vertical bars in histogram
+                    wavright_v = wav_v + dwavright_v
+                    doconnect_v = (wavright_v[:-1] == (wav_v[1:]-dwavleft_v[1:]))
+                    vbm_sv = 0.5*(stokes_sv[:,:-1] + stokes_sv[:,1:])
+                    vbe_sv = 0.5*np.abs(stokes_sv[:,:-1] - stokes_sv[:,1:])
+                    plot_S[S].errorbar(wavright_v[:-1][doconnect_v],vbm_sv[S-1][doconnect_v],    \
+                        yerr=vbe_sv[S-1][doconnect_v],color=plotcolor,marker='None',    \
+                        linewidth=0.,elinewidth=lwdefault,capsize=0)         
+                if ((connect == 'hist') | errorbars):               # plot horizontal bars in histogram   
+                    plot_S[S].errorbar(wav_v,stokes_sv[S-1],xerr=(dwavleft_v,dwavright_v),  \
+                        color=plotcolor,marker='None',linewidth=0.,elinewidth=lwdefault,capsize=0)                                                  
 
       # Printing for observation
         textfile = sys.stdout
@@ -226,28 +301,29 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
 
         if stokess > 2:
             if tcenter == 0:                 # tcenter has not been set by manual plot limits
-                tcenter = ((0.5*np.arctan2(wtavstokes_s[1],wtavstokes_s[0])) + np.pi) % np.pi
+                tcenter = ((0.5*np.arctan2(avstokes_s[1],avstokes_s[0])) + np.pi) % np.pi
         else:
-            tcenter = np.pi()/2.
+            tcenter = np.pi/2.
 
         print >>textfile, ("\n%16s %16s    " % (name,obsdate)),
         if hassyserr: print >>textfile, ('Syserr: %8.3f' % hdul[0].header['SYSERR']),
         print >>textfile 
 
         if bintype == 'unbin':
-            printstokes(stokes_Sw[:,ok_w],var_Sw[:,ok_w],wav_w[ok_w],   \
+            printstokes(stokes_Sw[:,ok_w],var_Sw[:stokess,ok_w],wav_w[ok_w],   \
                 tcenter=tcenter,textfile=textfile,isfluxed=isfluxed)
         else:         
-            printstokes(stokes_SV[:,ok_V],var_SV[:,ok_V],wav_v,         \
+            printstokes(stokes_SV[:,ok_V],var_SV[:stokess,ok_V],wav_v,         \
                 tcenter=tcenter,textfile=textfile,isfluxed=isfluxed)
 
   # Plotting of stacked observations
     if saveplot:
         plot_S[0].set_ylim(bottom=0)                # intensity plot default baseline 0
-        if stokess >2: 
-            plot_S[1].set_ylim(bottom=0)            # linear polarization % plot default baseline 0
-            ymin,ymax = plot_S[2].set_ylim()        # linear polarization PA plot default 5 degree pad
-            plot_S[2].set_ylim(bottom=min(ymin,(ymin+ymax)/2.-5.),top=max(ymax,(ymin+ymax)/2.+5.))
+        if stokess >2:
+            if plottype == 'Ipt': 
+                plot_S[1].set_ylim(bottom=0)            # linear polarization % plot default baseline 0
+                ymin,ymax = plot_S[2].set_ylim()        # linear polarization PA plot default 5 degree pad
+                plot_S[2].set_ylim(bottom=min(ymin,(ymin+ymax)/2.-5.),top=max(ymax,(ymin+ymax)/2.+5.))
         if len(ylimlisti)>0:
             for (i,ys) in enumerate(ylimlisti):
                 S = stokess-i/2-1
@@ -263,7 +339,7 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
         if tags:                 # raw and final stokes files
             objlist = sorted(list(set(namelist[b].split("_")[0] for b in range(obss))))
             confcyclelist = sorted(list(set(namelist[b].replace("_stokes","").split("_",1)[-1] for b in range(obss))))
-            plotfile = '_'.join(objlist+confcyclelist+list([plotname,bin]))+'.pdf'
+            plotfile = '_'.join(objlist+confcyclelist+list([plotname,bin,plottype]))+'.pdf'
         else:                               # diffsum files from diffsum
             plotfile = namelist[0]+'-'+namelist[-1][-4:]+'.pdf'
         plt.savefig(plotfile,orientation='portrait')
@@ -274,7 +350,7 @@ def specpolview(infile_list, bin='unbin', save = '', debug=False):
     return
 
 #---------------------------------------------------------------------------------------------
-def viewstokes(stokes_Sw,var_Sw,ok_w,tcenter=0.):
+def viewstokes(stokes_Sw,err2_Sw,ok_w=[True],tcenter=0.):
     """Compute normalized stokes parameters, converts Q-U to P-T, for viewing
 
     Parameters
@@ -286,18 +362,20 @@ def viewstokes(stokes_Sw,var_Sw,ok_w,tcenter=0.):
        variance for stokes_sw
 
     ok_w: 1d boolean nparray(stokes,wavelength bin) 
-       marking good stokes values
+       marking good stokes values. default all ok.
 
     Output: normalized stokes parameters and errors, linear stokes converted to pol %, PA
+       Ignore covariance.  Assume binned first if necessary.
 
     """
 
     stokess,wavs = stokes_Sw.shape
     stokes_vw = np.zeros((stokess-1,wavs))
     err_vw = np.zeros((stokess-1,wavs))
+    if (len(ok_w) == 1): ok_w = np.ones(wavs,dtype=bool)
 
-    stokes_vw[:,ok_w] = 100.*stokes_Sw[1:,ok_w]/stokes_Sw[0,ok_w]                            # in percent
-    err_vw[:,ok_w] = 100.*np.sqrt(var_Sw[1:stokess,ok_w])/stokes_Sw[0,ok_w]
+    stokes_vw[:,ok_w] = 100.*stokes_Sw[1:,ok_w]/stokes_Sw[0,ok_w]               # in percent
+    err_vw[:,ok_w] = 100.*np.sqrt(err2_Sw[1:stokess,ok_w])/stokes_Sw[0,ok_w]     # error bar ignores covariance
 
     if (stokess >2):
         stokesP_w = np.zeros((wavs))
@@ -311,9 +389,9 @@ def viewstokes(stokes_Sw,var_Sw,ok_w,tcenter=0.):
         stokesT_w[ok_w] = (stokesT_w[ok_w]-(tcenter+np.pi/2.)+np.pi) % np.pi + (tcenter-np.pi/2.)
                                                                                     # optimal PA folding                
      # variance matrix eigenvalues, ellipse orientation
-        varpe_dw[:,ok_w] = 0.5*(var_Sw[1,ok_w]+var_Sw[2,ok_w]                          \
-            + np.array([1,-1])[:,None]*np.sqrt((var_Sw[1,ok_w]-var_Sw[2,ok_w])**2 + 4*var_Sw[-1,ok_w]**2))
-        varpt_w[ok_w] = 0.5*np.arctan2(2.*var_Sw[-1,ok_w],var_Sw[1,ok_w]-var_Sw[2,ok_w])
+        varpe_dw[:,ok_w] = 0.5*(err2_Sw[1,ok_w]+err2_Sw[2,ok_w]                          \
+            + np.array([1,-1])[:,None]*np.sqrt((err2_Sw[1,ok_w]-err2_Sw[2,ok_w])**2 + 4*err2_Sw[-1,ok_w]**2))
+        varpt_w[ok_w] = 0.5*np.arctan2(2.*err2_Sw[-1,ok_w],err2_Sw[1,ok_w]-err2_Sw[2,ok_w])
      # linear polarization variance along p, PA   
         varP_w[ok_w] = varpe_dw[0,ok_w]*(np.cos(2.*stokesT_w[ok_w]-varpt_w[ok_w]))**2   \
                + varpe_dw[1,ok_w]*(np.sin(2.*stokesT_w[ok_w]-varpt_w[ok_w]))**2
@@ -321,16 +399,16 @@ def viewstokes(stokes_Sw,var_Sw,ok_w,tcenter=0.):
                + varpe_dw[1,ok_w]*(np.cos(2.*stokesT_w[ok_w]-varpt_w[ok_w]))**2
 
         stokes_vw[0,ok_w] = 100*stokesP_w[ok_w]/stokes_Sw[0,ok_w]                  # normalized % linear polarization
-        err_vw[0,ok_w] =  100*np.sqrt(var_Sw[1,ok_w])/stokes_Sw[0,ok_w]
+        err_vw[0,ok_w] =  100*np.sqrt(err2_Sw[1,ok_w])/stokes_Sw[0,ok_w]
         stokes_vw[1,ok_w] = np.degrees(stokesT_w[ok_w])                            # PA in degrees
-        err_vw[1,ok_w] =  0.5*np.degrees(np.sqrt(var_Sw[2,ok_w])/stokesP_w[ok_w])
+        err_vw[1,ok_w] =  0.5*np.degrees(np.sqrt(err2_Sw[2,ok_w])/stokesP_w[ok_w])
 
     return stokes_vw,err_vw
  
 #---------------------------------------------------------------------------------------------
-def wtavstokes(stokes_Sw,var_Sw,wav_w):
-    """Computed weighted average normalized stokes parameters
-    Weight is 1/sqrt(variance mean across stokes)
+def avstokes(stokes_Sw,var_Sw,covar_Sw,wav_w):
+    """Computed average normalized stokes parameters
+    Average is unnormalized stokes (intensity weighted), then normalized.
 
     Parameters
     ----------
@@ -340,26 +418,27 @@ def wtavstokes(stokes_Sw,var_Sw,wav_w):
     var_Sw: 2d float nparray(unnormalized stokes,wavelength bin) 
        variance for stokes_Sw
 
+    covar_Sw: 2d float nparray(unnormalized stokes,wavelength bin) 
+       covariance for stokes_Sw
+
     wav_w: 1d float ndarray(wavelength bin)
 
-    Output: wtd avg normalized stokes, err, wavelength
+    Output: avg normalized stokes, err, wavelength
 
     """
     stokess = stokes_Sw.shape[0]
     ok_w = (var_Sw != 0).all(axis=0)
-    stokes_sW = stokes_Sw[1:,ok_w]/stokes_Sw[0,ok_w]                            
-    var_sW = var_Sw[1:,ok_w]/stokes_Sw[0,ok_w]**2
-    wav_W = wav_w[ok_w]
-    wt_W = 1./(var_sW[1:stokess].mean(axis=0))
 
-    wtavvar_s = (var_sW*wt_W**2).sum(axis=1)/ wt_W.sum()**2
-    wtavstokes_s = (stokes_sW*wt_W).sum(axis=1)/ wt_W.sum()
-    wtavwav = (wav_W*wt_W).sum()/wt_W.sum()
-
-    return wtavstokes_s, wtavvar_s, wtavwav
+    avstokes_S = stokes_Sw[:,ok_w].sum(axis=1)/ ok_w.sum()
+    avvar_S = (var_Sw[:,ok_w] + 2.*covar_Sw[:,ok_w]).sum(axis=1)/ ok_w.sum()**2
+    avwav = wav_w[ok_w].sum()/ok_w.sum()
+    avstokes_s  = avstokes_S[1:]/avstokes_S[0]
+    avvar_s  = avvar_S[1:]/avstokes_S[0]**2
+                           
+    return avstokes_s, avvar_s, avwav
 
 #---------------------------------------------------------------------------------------------
-def printstokes(stokes_Sw,var_Sw,wav_w,textfile=sys.stdout,tcenter=0,isfluxed=False):
+def printstokes(stokes_Sw,var_Sw,wav_w,textfile=sys.stdout,tcenter=np.pi/2.,isfluxed=False):
     """Print intensity (if not=1) and normalized stokes parameters, plus (if stokes includes Q,U) P,T.
 
     Parameters

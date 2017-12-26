@@ -4,11 +4,11 @@ import copy
 import numpy as np
 from astropy.io import fits
 
-import polsalt
-from polsalt.specpolwollaston import correct_wollaston, read_wollaston
+polsaltdir = '/'.join(os.path.realpath(__file__).split('/')[:-2])
+datadir = polsaltdir+'/polsalt/data/'
+sys.path.extend((polsaltdir+'/polsalt/',))
 
-datadir = os.path.dirname(polsalt.__file__) + '/data/'
-
+from specpolwollaston import correct_wollaston, read_wollaston
 
 def correct_files(hdu,tilt=0):
     """For a given input file, apply corrections for wavelength, 
@@ -17,6 +17,9 @@ def correct_files(hdu,tilt=0):
     Parameters
     ----------
     input_file: astropy.io.fits.HDUList
+
+    tilt: (float)
+        change in row from col = 0 to cols
     """
     
     cbin, rbin = [int(x) for x in hdu[0].header['CCDSUM'].split(" ")]
@@ -28,7 +31,7 @@ def correct_files(hdu,tilt=0):
     thdu[1].name = 'SCI'
     rpix_oc = read_wollaston(thdu, wollaston_file=datadir+"wollaston.txt")
     drow_oc = (rpix_oc-rpix_oc[:,cols/2][:,None])/rbin
-    drow_oc += -(tilt/cbin)*(np.arange(cols) - cols/2)/cols
+    drow_oc += -tilt*(np.arange(cols) - cols/2)/cols
  
     for i in range(1, len(hdu)):
        for o in range(beams):

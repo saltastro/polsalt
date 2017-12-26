@@ -39,13 +39,14 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
     logfile: str
         Name of file for logging
 
-
     Notes
     -----
-    The input file is a FITS file containing a 1D extracted spectrum with an e and o level includes the intensity, variance, and bad pixels as extracted from the 2D spectrum.
-
-    For each pair of stokes measurements, it produces an output FITS file now with two columns that are the intensity and difference
-    for the pair measured as a function of wavelength and also includes the variance and bad pixel maps.  The output file is named as the target name_configuration number_wave plate positions_number of repeats.fits
+    The input file is a FITS file containing a 1D extracted spectrum with an e and o level  
+        includes the intensity, variance, covariance, and bad pixels as extracted from the 2D spectrum.
+    For each pair of stokes measurements, it produces an output FITS file now with two columns that are 
+        the intensity and difference for the pair measured as a function of wavelength 
+        and also includes the variance, covariance, and bad pixel maps.  
+    The output file is named as the target name_configuration number_wave plate positions_number of repeats.fits
     """
     # set up some files that will be needed
     obsdate = os.path.basename(infilelist[0]).split('.')[0][-12:-4]
@@ -53,6 +54,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
     patternfile = open(datadir + 'wppaterns.txt', 'r')
     with logging(logfile, debug) as log:
 
+        log.message('specpolrawstokes version: 20171226', with_header=False)        
         # create the observation log
         obs_dict = obslog(infilelist)
         images = len(infilelist)
@@ -69,7 +71,6 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
         obs_i = -np.ones(images, dtype='int')
 
     # make table of observations
-    # TODO: This should be moved to its own module
         configs = 0
         obss = 0
         for i in range(images):
@@ -188,7 +189,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
                 name += ('_%02i' % (count + 1))
 
                 create_raw_stokes_file( first_pair_file, second_pair_file, wav0, wavs,
-                    output_file=name + '.fits', wppat=wppat_i[i])
+                    output_file=name + '.fits', wppat=wppat_i[i], debug=debug)
                 log.message('%20s  %1i  %1i %1i %8s %8.2f %8.2f %12s' %
                             (name, obs, rbin, cbin, grating, grang, artic, wppat_i[i]), with_header=False)
                 name_n.append(name)
@@ -220,13 +221,18 @@ def create_raw_stokes_file(first_pair_file, second_pair_file, wav0, wavs, output
 
     Notes
     ------
-    Writes out a FITS file containing the intensity and difference for the pair
+    Writes out a FITS file containing the unnormalized intensity and stokes difference for the pair
+    _f  filter pair index (0,1)
+    _O  o/e index for unnormailzed extractions (0,1)
+    _w  wavelength index
+    _S  unnormalized raw stokes index (I,S = 0,1)
 
     """
 
-    sci_fow = np.zeros((2, 2, wavs))
-    var_fow = np.zeros_like(sci_fow)
-    bpm_fow = np.zeros_like(sci_fow)
+    sci_fOw = np.zeros((2, 2, wavs))
+    var_fOw = np.zeros_like(sci_fOw)
+    covar_fOw = np.zeros_like(sci_fOw)
+    bpm_fOw = np.zeros_like(sci_fOw)
     dwav = pyfits.getheader(first_pair_file, 'SCI', 1)['CDELT1']
     grating = pyfits.getheader(first_pair_file, 'SCI')['GRATING'].strip()
     grang = float(pyfits.getheader(first_pair_file, 'SCI')['GR-ANGLE'])
@@ -236,48 +242,57 @@ def create_raw_stokes_file(first_pair_file, second_pair_file, wav0, wavs, output
         hdulist = pyfits.open(img)
         wav0f = pyfits.getheader(img, 'SCI', 1)['CRVAL1']
         c0 = int((wav0-wav0f)/dwav)
-        sci_fow[f] = hdulist['sci'].data[:,:,c0:c0+wavs].reshape((2, -1))
-        var_fow[f] = hdulist['var'].data[:,:,c0:c0+wavs].reshape((2, -1))
-        bpm_fow[f] = hdulist['bpm'].data[:,:,c0:c0+wavs].reshape((2, -1))
+        sci_fOw[f] = hdulist['SCI'].data[:,:,c0:c0+wavs].reshape((2, -1))
+        var_fOw[f] = hdulist['VAR'].data[:,:,c0:c0+wavs].reshape((2, -1))
+        covar_fOw[f] = hdulist['COV'].data[:,:,c0:c0+wavs].reshape((2, -1))
+        bpm_fOw[f] = hdulist['BPM'].data[:,:,c0:c0+wavs].reshape((2, -1))
 
   # Mark as bad bins with negative intensities
-    bpm_fow[sci_fow < 0] = 1
+    bpm_fOw[sci_fOw < 0] = 1
 
-  # compute intensity, E-O stokes spectrum, VAR, BPM.
+  # compute intensity, E-O stokes spectrum, VAR, COV, BPM.
   # fits out: unnormalized (int,stokes),(length 1) spatial,wavelength
   # wavelength marked bad if it is bad in either filter or order
 
-    bpm_w = (bpm_fow.sum(axis=0).sum(axis=0) > 0).astype(int)
+    bpm_w = (bpm_fOw.sum(axis=0).sum(axis=0) > 0).astype(int)
     wok = (bpm_w == 0)
 
-    stokes_sw = np.zeros((2, wavs), dtype='float32')
-    var_sw = np.zeros_like(stokes_sw)
+    stokes_Sw = np.zeros((2, wavs), dtype='float32')
+    var_Sw = np.zeros_like(stokes_Sw)
+    covar_Sw = np.zeros_like(stokes_Sw)
     wav_w = np.arange(wav0,wav0+dwav*wavs,dwav)
 
   # compute and correct for estimated throughput change (improves pupil variation correction)
     EoverO_w = greff(grating,grang,artic,dateobs,wav_w)[1]
-    f21 = np.median(((sci_fow[1][0,wok]*EoverO_w[wok] + sci_fow[1][1,wok])/      \
-                     (sci_fow[0][0,wok]*EoverO_w[wok] + sci_fow[0][1,wok])))
+    
+    f21 = np.median(((sci_fOw[1][0,wok]*EoverO_w[wok] + sci_fOw[1][1,wok])/      \
+                     (sci_fOw[0][0,wok]*EoverO_w[wok] + sci_fOw[0][1,wok])))
 
-    if debug: 
-        print "f21 = ",f21
-        np.savetxt("ps.txt",np.vstack((wav_w,wok,EoverO_w)).T,fmt="%7.1f %2i %8.4f")
+    if debug:
+        name = output_file.split('.')[0] 
+        print name," f21 = ",f21
+        np.savetxt(name+"_ps.txt",np.vstack((wav_w,wok,sci_fOw.reshape((4,-1)),EoverO_w)).T,fmt="%7.1f %2i "+5*"%8.4f ")
 
-  # intensity: 0.5 * (o1 + e1 + (o2 + e2)/f21)
-    stokes_sw[0][wok] = 0.5 * (sci_fow[0][:, wok].sum(axis=0) + sci_fow[1][:, wok].sum(axis=0)/f21)
-    var_sw[0][wok] = 0.25 * (var_fow[0][:, wok].sum(axis=0) + var_fow[1][:, wok].sum(axis=0)/f21**2)
+  # intensity: 0.5 * (O1 + E1 + (O2 + E2)/f21)
+    stokes_Sw[0][wok] = 0.5 * (sci_fOw[0][:, wok].sum(axis=0) + sci_fOw[1][:, wok].sum(axis=0)/f21)
+    var_Sw[0][wok] = 0.25 * (var_fOw[0][:, wok].sum(axis=0) + var_fOw[1][:, wok].sum(axis=0)/f21**2)
+    covar_Sw[0][wok] = 0.25 * (covar_fOw[0][:, wok].sum(axis=0) + covar_fOw[1][:, wok].sum(axis=0)/f21**2)
 
-  # difference: defined as 0.5 * ( (e1-e2/f21)/(e1+e2/f21) - (o1-o2/f21)/(o1+o2/f21))
-    stokes_sw[1, wok] = 0.5*    \
-        ((sci_fow[0, 1, wok] - sci_fow[1, 1, wok]/f21) / (sci_fow[0, 1, wok] + sci_fow[1, 1, wok]/f21)
-       - (sci_fow[0, 0, wok] - sci_fow[1, 0, wok]/f21) / (sci_fow[0, 0, wok] + sci_fow[1, 0, wok]/f21))
-    var_sw[1, wok] = 0.25*  \
-        ((var_fow[0, 1, wok] + var_fow[1, 1, wok]/f21**2) / (sci_fow[0, 1, wok] + sci_fow[1, 1, wok]/f21) ** 2
-       + (var_fow[0, 0, wok] + var_fow[1, 0, wok]/f21**2) / (sci_fow[0, 0, wok] + sci_fow[1, 0, wok]/f21) ** 2)
+  # stokes difference: defined as int * 0.5 * ( (E1-E2/f21)/(E1+E2/f21) - (O1-O2/f21)/(O1+O2/f21))
+    stokes_Sw[1, wok] = 0.5*    \
+        ((sci_fOw[0, 1, wok] - sci_fOw[1, 1, wok]/f21) / (sci_fOw[0, 1, wok] + sci_fOw[1, 1, wok]/f21)
+       - (sci_fOw[0, 0, wok] - sci_fOw[1, 0, wok]/f21) / (sci_fOw[0, 0, wok] + sci_fOw[1, 0, wok]/f21))
+    var_Sw[1, wok] = 0.25*  \
+        ((var_fOw[0, 1, wok] + var_fOw[1, 1, wok]/f21**2) / (sci_fOw[0, 1, wok] + sci_fOw[1, 1, wok]/f21) ** 2
+       + (var_fOw[0, 0, wok] + var_fOw[1, 0, wok]/f21**2) / (sci_fOw[0, 0, wok] + sci_fOw[1, 0, wok]/f21) ** 2)
+    covar_Sw[1, wok] = 0.25*  \
+        ((covar_fOw[0, 1, wok] + covar_fOw[1, 1, wok]/f21**2) / (sci_fOw[0, 1, wok] + sci_fOw[1, 1, wok]/f21) ** 2
+       + (covar_fOw[0, 0, wok] + covar_fOw[1, 0, wok]/f21**2) / (sci_fOw[0, 0, wok] + sci_fOw[1, 0, wok]/f21) ** 2)
 
-    stokes_sw[1] *= stokes_sw[0]
-    var_sw[1] *= stokes_sw[0] ** 2
-    bpm_sw = np.array([bpm_w, bpm_w], dtype='uint8').reshape((2, wavs))
+    stokes_Sw[1] *= stokes_Sw[0]
+    var_Sw[1] *= stokes_Sw[0] ** 2
+    covar_Sw[1] *= stokes_Sw[0] ** 2
+    bpm_Sw = np.array([bpm_w, bpm_w], dtype='uint8').reshape((2, wavs))
 
     hduout = pyfits.PrimaryHDU(header=hdulist[0].header)
     hduout = pyfits.HDUList(hduout)
@@ -285,15 +300,17 @@ def create_raw_stokes_file(first_pair_file, second_pair_file, wav0, wavs, output
         hduout[0].header['WPPATERN'] = wppat
     header = hdulist['SCI'].header.copy()
     header['VAREXT'] =  2
-    header['BPMEXT'] =  3
+    header['COVEXT'] =  3
+    header['BPMEXT'] =  4
     header['CRVAL1'] =  wav0
     header['CTYPE3'] =  'I,S'
-    hduout.append( pyfits.ImageHDU( data=stokes_sw.reshape( (2, 1, wavs)), header=header, name='SCI'))
+    hduout.append( pyfits.ImageHDU( data=stokes_Sw.reshape( (2, 1, wavs)), header=header, name='SCI'))
     header.set('SCIEXT', 1, 'Extension for Science Frame', before='VAREXT')
-    hduout.append( pyfits.ImageHDU( data=var_sw.reshape( (2, 1, wavs)), header=header, name='VAR'))
-    hduout.append( pyfits.ImageHDU( data=bpm_sw.reshape( (2, 1, wavs)), header=header, name='BPM'))
+    hduout.append( pyfits.ImageHDU( data=var_Sw.reshape( (2, 1, wavs)), header=header, name='VAR'))
+    hduout.append( pyfits.ImageHDU( data=covar_Sw.reshape( (2, 1, wavs)), header=header, name='COV'))
+    hduout.append( pyfits.ImageHDU( data=bpm_Sw.reshape( (2, 1, wavs)), header=header, name='BPM'))
 
-    hduout.writeto(output_file, clobber=True, output_verify='warn')
+    hduout.writeto(output_file, overwrite=True, output_verify='warn')
 
 # ----------------------------------------------------------
 if __name__=='__main__':
