@@ -81,13 +81,13 @@ def imred(infilelist, prodir, bpmfile=None, crthresh='', gaindb = None, cleanup=
             img = os.path.basename(img)
                                                                     
             hdu = prepare(hdu, createvar=False, badpixelstruct=None)
-            if not cleanup: hdu.writeto('p'+img, clobber=True)
+            if not cleanup: hdu.writeto('p'+img, overwrite=True)
 
             hdu = bias(hdu,subover=True, trim=True, subbias=False,
                        bstruct=None, median=False, function='polynomial',
                        order=5, rej_lo=5.0, rej_hi=5.0, niter=10,
                        plotover=False, log=log, verbose=verbose)    
-            if not cleanup: hdu.writeto('bp'+img, clobber=True)
+            if not cleanup: hdu.writeto('bp'+img, overwrite=True)
 
             # put windowed data into full image
             exts = len(hdu)
@@ -125,7 +125,7 @@ def imred(infilelist, prodir, bpmfile=None, crthresh='', gaindb = None, cleanup=
                 usedb = False
                 dblist = ''
             hdu = gain(hdu, mult=True, usedb=usedb, dblist=dblist, log=log, verbose=verbose)
-            if not cleanup: hdu.writeto('gbp'+img, clobber=True)
+            if not cleanup: hdu.writeto('gbp'+img, overwrite=True)
 
             #cross talk correct the data
             hdu=xtalk(hdu, [], log=log, verbose=verbose)
@@ -149,7 +149,7 @@ def imred(infilelist, prodir, bpmfile=None, crthresh='', gaindb = None, cleanup=
                     hdu[0].header.add_history('CRCLEAN: multicrclean, thresh = ',thresh)
                 else:
                     hdu[0].header.add_history('CRCLEAN: None')
-            hdu.writeto('xgbp'+img, clobber=True)
+            hdu.writeto('xgbp'+img, overwrite=True)
             hdu.close()
         
     #mosaic the data
@@ -182,7 +182,7 @@ def imred(infilelist, prodir, bpmfile=None, crthresh='', gaindb = None, cleanup=
         addbpmcol[np.argmax(addbpmcol)-4:np.argmax(addbpmcol)] = True    # allow for chip tilt
         bpm_rc[:,addbpmcol] = 1
         hdu[3].data = bpm_rc
-        hdu.writeto(filename,clobber=True)
+        hdu.writeto(filename,overwrite=True)
 
     #clean up the images
     if cleanup:
