@@ -35,11 +35,13 @@ from saltcrclean import multicrclean
 
 from saltcombine import saltcombine
 from saltflat import saltflat
-from saltmosaic import saltmosaic
+#from saltmosaic import saltmosaic
+from saltmosaic_kn import saltmosaic
 from saltillum import saltillum
 debug = True
 
 import reddir
+from specpolutils import datedline
 datadir = os.path.dirname(inspect.getfile(reddir))+"/data/"
 
 def imred(infilelist, prodir, bpmfile=None, crthresh='', gaindb = None, cleanup=True):
@@ -54,6 +56,12 @@ def imred(infilelist, prodir, bpmfile=None, crthresh='', gaindb = None, cleanup=
     logfile='im'+obsdate+'.log'
     flatimage='FLAT%s.fits' % (obsdate)
     dbfile='spec%s.db' % obsdate
+    geomline = datedline(datadir+'RSSgeom.dat',obsdate)
+    if len(geomline) == 0:
+        print 'Invalid geometry file, ',datadir+'RSSgeom.dat',', exitting'
+        exit() 
+    geomfile=obsdate+'_geom.txt'
+    open(geomfile,'w').write(geomline)
 
     #create the observation log
 #    obs_dict=obslog(infilelist)
@@ -154,15 +162,8 @@ def imred(infilelist, prodir, bpmfile=None, crthresh='', gaindb = None, cleanup=
         
     #mosaic the data
     #khn: attempt to use most recent previous geometry to obsdate.  
-    #NOTE: mosaicing does not do this correctly
-    #geomdb = open(datadir+"RSSgeom.dat",'r')
-    #for geomline in geomdb:
-    #    if geomline[0]=='#': continue
-    #    if (int(obsdate) > int(geomline.split(' ')[0].replace('-',''))): break
-    #geomfile = "RSSgeom_obsdate.dat"
-    #open(geomfile,'w').write(geomline)
 
-    geomfile=iraf.osfn("pysalt$data/rss/RSSgeom.dat")
+    #geomfile=iraf.osfn("pysalt$data/rss/RSSgeom.dat")
     
     try:
        saltmosaic('xgbpP*fits', '', 'm', geomfile, interp='linear', cleanup=True, geotran=True, clobber=True, logfile=logfile, verbose=True)

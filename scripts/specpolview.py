@@ -10,7 +10,7 @@ Plot and text output of stokes data, optionally binned
 import os, sys, glob, shutil, inspect
 
 import numpy as np
-import pyfits
+from astropy.io import fits as pyfits
 
 polsaltdir = '/'.join(os.path.realpath(__file__).split('/')[:-2])
 datadir = polsaltdir+'/polsalt/data/'
@@ -131,7 +131,7 @@ def specpolview(infile_list, **kwargs):
             namelist=[]
 
     # calculate, print means (stokes average in unnorm space)
-        hassyserr = hdul[0].header.has_key('SYSERR')
+        hassyserr = ('SYSERR' in hdul[0].header)
 
         avstokes_s, avvar_s, avwav = avstokes(stokes_Sw[:,ok_w],var_Sw[:-1][:,ok_w],covar_Sw[:,ok_w],wav_w[ok_w]) 
         avstokes_S = np.insert(avstokes_s,0,1.)
@@ -160,9 +160,9 @@ def specpolview(infile_list, **kwargs):
       # get manual plot limits, resetting tcenter (PA wrap center) if necessary
         if saveplot:
             while (askpltlim):
-                ylimlisti = (raw_input('\nOptional scale (bottom-top, comma sep): ')).split(',')
-                if len(''.join(ylimlisti))==0: ylimlisti = []
-                ismanlim_i = np.array([len(ys)>0 for ys in ylimlisti])
+                yxlimlisti = (raw_input('\nOptional scale (bottom-top, comma sep): ')).split(',')
+                if len(''.join(yxlimlisti))==0: yxlimlisti = []
+                ismanlim_i = np.array([len(ys)>0 for ys in yxlimlisti])
                 if ismanlim_i.sum() == 0: 
                     askpltlim = False
                     break
@@ -173,7 +173,7 @@ def specpolview(infile_list, **kwargs):
                         continue
                     if ((plottype == 'Ipt') | (plottype == 'IPt')):
                         if ismanlim_i[itbottom]:
-                            tcenter = np.radians((float(ylimlisti[itbottom]) + float(ylimlisti[ittop]))/2.)
+                            tcenter = np.radians((float(yxlimlisti[itbottom]) + float(yxlimlisti[ittop]))/2.)
                     if ((plottype == 'Iqu') | (plottype == 'IQU')):
                         trotate = float(raw_input('\nOptional PA zeropoint (default 0): ') or '0')
                         if trotate:
@@ -181,7 +181,7 @@ def specpolview(infile_list, **kwargs):
                             plot_S[2].set_ylabel('Stokes U (%%)  PA0= %7.1f deg' % trotate)  
                         if (len(ismanlim_i) == 2):
                             ismanlim_i = np.tile(ismanlim_i,2)
-                            ylimlisti += ylimlisti
+                            yxlimlisti += yxlimlisti
                                                        
                 askpltlim = False
                      
@@ -324,11 +324,15 @@ def specpolview(infile_list, **kwargs):
                 plot_S[1].set_ylim(bottom=0)            # linear polarization % plot default baseline 0
                 ymin,ymax = plot_S[2].set_ylim()        # linear polarization PA plot default 5 degree pad
                 plot_S[2].set_ylim(bottom=min(ymin,(ymin+ymax)/2.-5.),top=max(ymax,(ymin+ymax)/2.+5.))
-        if len(ylimlisti)>0:
-            for (i,ys) in enumerate(ylimlisti):
+        if len(yxlimlisti)>0:
+            for (i,ys) in enumerate(yxlimlisti):
+                if (i>3): continue
                 S = stokess-i/2-1
                 if (ismanlim_i[i] & ((i % 2)==0)): plot_S[S].set_ylim(bottom=float(ys))
                 if (ismanlim_i[i] & ((i % 2)==1)): plot_S[S].set_ylim(top=float(ys))
+        if len(yxlimlisti)>4:
+            if (ismanlim_i[4]): plot_S[S].set_xlim(left=float(yxlimlisti[4]))            
+            if (ismanlim_i[5]): plot_S[S].set_xlim(right=float(yxlimlisti[5]))    
 
         if obss>1: 
             plot_S[0].legend(fontsize='x-small',loc='upper left')

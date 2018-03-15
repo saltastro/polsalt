@@ -103,6 +103,8 @@ def specpolextract_sc(infilelist,*posargs,**kwargs):
 
     infilelist = [ 'c'+file for file in infilelist ]
 
+    print ("Extraction aperture: %6.1f arcsec" % xtrwindow)
+    print >>log, ("Extraction aperture: %6.1f arcsec" % xtrwindow)
     for img in infilelist:
         hdul = pyfits.open(img)
         if hdul[0].header['LAMPID'].strip() != 'NONE': continue

@@ -1,5 +1,6 @@
 import os, sys, glob, shutil, inspect
 import numpy as np
+from astropy.io import fits as pyfits, ascii
 from scipy.interpolate import interp1d
 from scipy import interpolate as ip
 
@@ -430,3 +431,10 @@ def blksmooth1d(ar_x,blk,ok_x):
     oksm_x = (arsm_x != 0.)
 
     return arsm_x,oksm_x
+
+# ----------------------------------------------------------
+def printstdlog(string,logfile):
+    print string
+    print >>open(logfile,'a'), string
+    return 
+
