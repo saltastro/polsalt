@@ -188,6 +188,7 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         hdul['VAR'].header['CUNIT3'] = cunitfluxed
         hdul['COV'].data *= fluxcal_w**2
         hdul['COV'].header['CUNIT3'] = cunitfluxed
+        hdul['BPM'].data = ((hdul['BPM'].data > 0) | (fluxcal_w ==0.)).astype('uint8')
         hdul[0].header.add_history(fluxcalhistory)
         hdul.writeto(infilelist[iobs],overwrite=True)
 
