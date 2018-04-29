@@ -1,4 +1,5 @@
-# RSS linear polarization PA zeropoint
+# RSS linear polarization PA zeropoint (relative to delivery)
 # date_ver       dPA(deg)
-20061030_v00      0.0   
+20061030_v00      0.0
+20180410_v01    120.0   
 

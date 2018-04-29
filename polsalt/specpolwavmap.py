@@ -42,6 +42,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
         log.message('specpolwavmap version: 20171226', with_header=False)         
         # group the files together
         config_dict = list_configurations(infilelist, log)
+        usesaltlinelist = (len(linelistlib)>0)
         
         for config in config_dict:
             if len(config_dict[config]['arc']) == 0:
@@ -70,7 +71,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             if lamp == 'NONE': lamp='CuAr'
             
             # set up the linelist to be used
-            if len(linelistlib):                # if linelistlib specified, use salt-supplied
+            if usesaltlinelist:                # if linelistlib specified, use salt-supplied
                 with open(linelistlib) as fd:
                     linelistdict = dict(line.strip().split(None, 1) for line in fd)
                 lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp]) 

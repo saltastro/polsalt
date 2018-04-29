@@ -171,7 +171,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                     lampid = pyfits.getheader(infilelist[i],0)['LAMPID'].strip().upper()
                     telpa = float(pyfits.getheader(infilelist[i],0)['TELPA'])
                     if lampid != "NONE": pacaltype ="Instrumental"
-                    if pacaltype == "Equatorial": eqpar_w = hpar_w + (telpa % 180)
+                    if pacaltype == "Equatorial": eqpar_w = hpar_w + dpa + (telpa % 180)
               # if object,config,wvplt changes, start a new comblist entry
                 else:   
                     if rawlist[j-1][1:4] != rawlist[j][1:4]: cycles = 1
@@ -185,7 +185,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
             # apply telescope zeropoint calibration, q rotated to raw coordinates
                 if not Linear_PolZeropoint_override:
                     trkrho = pyfits.getheader(infilelist[i])['TRKRHO']
-                    dpatelraw_w = -(22.5*float(wvplt[1]) + hpar_w + trkrho) 
+                    dpatelraw_w = -(22.5*float(wvplt[1]) + hpar_w + trkrho + dpa) 
                     rawtel0_sw =    \
                         specpolrotate(tel0_sw,0,0,dpatelraw_w,normalized=True)[0]
                     rawtel0_sw[:,okcal_w] *= heff_w[okcal_w]
@@ -426,6 +426,13 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                         stokes_Fw[1:,ok_w] = stokes_kSw[klist,1][:,ok_w]*(stokes_Fw[0,ok_w]/stokes_kSw[klist,0][:,ok_w])
                         var_Fw[1:3,ok_w] = var_kSw[klist,1][:,ok_w]*(stokes_Fw[0,ok_w]/stokes_kSw[klist,0][:,ok_w])**2
                         covar_Fw[1:,ok_w] = covar_kSw[klist,1][:,ok_w]*(stokes_Fw[0,ok_w]/stokes_kSw[klist,0][:,ok_w])**2
+                        if debug:                       
+                            np.savetxt(obsname+"_stokes.txt",np.vstack((wav_w,ok_w.astype(int),stokes_Fw)).T,    \
+                                fmt="%8.2f  "+"%2i "+3*" %10.6f")
+                            np.savetxt(obsname+"_var.txt",np.vstack((wav_w,ok_w.astype(int),var_Fw)).T, \
+                                fmt="%8.2f  "+"%2i "+4*"%14.9f ")
+                            np.savetxt(obsname+"_covar.txt",np.vstack((wav_w,ok_w.astype(int),covar_Fw)).T, \
+                                fmt="%8.2f  "+"%2i "+3*"%14.9f ")                       
 
                     elif wppat=='LINEAR-HI':
                      # for Linear-Hi, must go to normalized stokes in order for the pair combination to cancel systematic errors

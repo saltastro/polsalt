@@ -24,6 +24,8 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import FuncFormatter  
 plt.ioff()
 np.set_printoptions(threshold=np.nan)
+import warnings
+#warnings.simplefilter("error")
 
 #---------------------------------------------------------------------------------------------
 def specpolview(infile_list, **kwargs):
@@ -102,6 +104,9 @@ def specpolview(infile_list, **kwargs):
         wav_w = wav0 + dwav*np.arange(wavs)
         ok_Sw = (bpm_Sw==0)
         ok_w = ok_Sw.all(axis=0)
+        if debug:
+            np.savetxt("input.txt",np.vstack((wav_w,ok_w,stokes_Sw,var_Sw)).T,   \
+            fmt="%7.2f %3i "+7*"%10.4e ")
 
     # set up multiplot
         if obs==0:
@@ -226,7 +231,10 @@ def specpolview(infile_list, **kwargs):
                     +  wgap0_g[0] + 1
                 wgap0_g = wgap0_g[0:wgap1_g.shape[0]]
                 isbad_g = ((wgap1_g - wgap0_g) > allowedgap)
-                stokes_sw, err_sw = viewstokes(stokes_Sw,var_Sw,ok_w,tcenter)
+                if debug:
+                    np.savetxt("bininput.txt",np.vstack((wav_w,ok_w,stokes_Sw,var_Sw)).T,   \
+                    fmt="%7.2f %3i "+7*"%10.4e ")
+                stokes_sw, err_sw = viewstokes(stokes_Sw,var_Sw,ok_w=ok_w,tcenter=tcenter)
                 binvar_w = err_sw[0]**2
                 bincovar_w = np.zeros_like(binvar_w)
                 bincovar_w[ok_w] = binvar_w[ok_w]*covar_Sw[1,ok_w]/var_Sw[1,ok_w]
@@ -372,7 +380,7 @@ def viewstokes(stokes_Sw,err2_Sw,ok_w=[True],tcenter=0.):
        Ignore covariance.  Assume binned first if necessary.
 
     """
-
+    warnings.simplefilter("error")
     stokess,wavs = stokes_Sw.shape
     stokes_vw = np.zeros((stokess-1,wavs))
     err_vw = np.zeros((stokess-1,wavs))

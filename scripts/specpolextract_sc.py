@@ -138,7 +138,7 @@ def specpolextract_sc(infilelist,*posargs,**kwargs):
         wbin = wave_orc[0,row_o[0],cols/2]-wave_orc[0,row_o[0],(cols/2-1)]   # bin to nearest power of 2 angstroms          
         wbin = 2.**(np.rint(np.log2(wbin)))                                 
         wmin_oc = wave_orc.max(axis=1)                                     
-        wmin = wmin_oc[wmin_oc>0].reshape((2,-1)).min(axis=1).max()          # ignore wavmap 0 values        
+        wmin = max((wmin_oc[0][wmin_oc[0]>0]).min(), (wmin_oc[1][wmin_oc[1]>0]).min())  # ignore wavmap 0 values        
         wmax = wave_orc[:,row_o].reshape((2,-1)).max(axis=1).min()           # use wavs that are in both beams          
         wmin = (np.ceil(wmin/wbin)+1)*wbin                       
         wmax = (np.floor(wmax/wbin)-1)*wbin 
