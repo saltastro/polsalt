@@ -39,7 +39,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
 
     with logging(logfile, debug) as log:
         log.message('Pysalt Version: '+pysalt.verno, with_header=False)
-        log.message('specpolwavmap version: 20171226', with_header=False)         
+        log.message('specpolwavmap version: 20180804', with_header=False)         
         # group the files together
         config_dict = list_configurations(infilelist, log)
         usesaltlinelist = (len(linelistlib)>0)
@@ -48,33 +48,41 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             if len(config_dict[config]['arc']) == 0:
                 log.message('No Arc for this configuration:', with_header=False)
                 continue
-        #set up some information needed later
+            isdualarc = len(config_dict[config]['arc']) > 1
+
             iarc = config_dict[config]['arc'][0]
             hduarc = pyfits.open(iarc)
-            image_no = image_number(iarc)
+            image_id = str(image_number(iarc))
             rows, cols = hduarc[1].data.shape
             grating = hduarc[0].header['GRATING'].strip()
             grang = hduarc[0].header['GR-ANGLE']
             artic = hduarc[0].header['CAMANG']
             filter = hduarc[0].header['FILTER'].strip()
-
+            lamp=hduarc[0].header['LAMPID'].strip().replace(' ', '')
+            if lamp == 'NONE': lamp='CuAr'
             cbin, rbin = [int(x) for x in hduarc[0].header['CCDSUM'].split(" ")]
+
+            if isdualarc:
+                iarc2 = config_dict[config]['arc'][1]
+                hduarc2 = pyfits.open(iarc2)
+                ratio21 = np.percentile(hduarc2[1].data,99.9)/np.percentile(hduarc[1].data,99.9) 
+                image_id = image_id+'_'+str(image_number(iarc2))
+                hduarc[1].data += hduarc2[1].data/ratio21
+                lamp2=hduarc2[0].header['LAMPID'].strip().replace(' ', '')
+                log.message(('\nDual Arcs: '+lamp+' + '+lamp2+'/ %8.4f' % ratio21), with_header=False)
 
             # need this for the distortion correction 
             rpix_oc = read_wollaston(hduarc, wollaston_file=datadir+"wollaston.txt")
 
             #split the arc into the two beams
             hduarc, splitrow = specpolsplit(hduarc, splitrow=None, wollaston_file=datadir+"wollaston.txt")
+            rows = 2*hduarc['SCI'].data.shape[1]    # allow for odd number of input rows
 
-            #set up the lamp to be used
-            lamp=hduarc[0].header['LAMPID'].strip().replace(' ', '')
-            if lamp == 'NONE': lamp='CuAr'
-            
-            # set up the linelist to be used
             if usesaltlinelist:                # if linelistlib specified, use salt-supplied
                 with open(linelistlib) as fd:
                     linelistdict = dict(line.strip().split(None, 1) for line in fd)
-                lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp]) 
+                lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])
+                if isdualarc: lamp2file=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp2])
             else:                               # else, use line lists in polarimetry area for 300l
                 if grating=="PG0300": 
                     linelistlib=datadir+"linelistlib_300.txt"
@@ -85,11 +93,20 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
                     filter_l = np.sort(np.array(linelistdict[lamp].keys()))
                     usefilter = filter_l[np.where(int(filter[-5:-1]) < filter_l)[0][0]]
                     lampfile = datadir+linelistdict[lamp][usefilter]
+                    if isdualarc: lamp2file = datadir+linelistdict[lamp2][usefilter]
                 else:
                     linelistlib=datadir+"linelistlib.txt"
                     with open(linelistlib) as fd:
                         linelistdict = dict(line.strip().split(None, 1) for line in fd)   
-                    lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])  
+                    lampfile=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp])
+                    if isdualarc: lamp2file=iraf.osfn("pysalt$data/linelists/"+linelistdict[lamp2])  
+            if isdualarc:
+                lamp_dl = np.loadtxt(lampfile,usecols=(0,1),unpack=True)
+                lamp2_dl = np.loadtxt(lamp2file,usecols=(0,1),unpack=True)
+                duallamp_dl = np.sort(np.hstack((lamp_dl,lamp2_dl)))
+                np.savetxt('duallamp.txt',duallamp_dl.T,fmt='%10.3f %8i')
+                lampfile = 'duallamp.txt'
+                lamp = lamp+','+lamp2
 
             # some housekeeping for bad keywords
             if hduarc[0].header['MASKTYP'].strip() == 'MOS':   # for now, MOS treated as single, short 1 arcsec longslit
@@ -99,14 +116,14 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             del hduarc['BPM']
     
             # log the information about the arc
-            log.message('\nARC: image '+str(image_no)+' GRATING '+grating\
+            log.message('\nARC: image '+image_id+' GRATING '+grating\
                         +' GRANG '+("%8.3f" % grang)+' ARTIC '+("%8.3f" % artic)+' LAMP '+lamp, with_header=False)
             log.message('  Split Row: '+("%4i " % splitrow), with_header=False)
 
             # set up the correction for the beam splitter
             drow_oc = (rpix_oc-rpix_oc[:,cols/2][:,None])/rbin
 
-            wavmap_orc = pol_wave_map(hduarc, image_no, drow_oc, rows, cols,
+            wavmap_orc = pol_wave_map(hduarc, image_id, drow_oc, rows, cols,
                                       lampfile=lampfile, function=function, order=order,
                                       automethod=automethod, log=log, logfile=logfile)
 
@@ -128,9 +145,9 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
 
                 for (i,image) in enumerate(config_dict[config]['object']):
                     hdulist = pyfits.open(image)
-                    okbin_rc = (hdulist['BPM'].data == 0)
-                    sci_irc[i][okbin_rc] = hdulist['SCI'].data[okbin_rc]
-                    var_irc[i][okbin_rc] = hdulist['VAR'].data[okbin_rc]
+                    okbin_rc = (hdulist['BPM'].data[:rows,:] == 0)
+                    sci_irc[i][okbin_rc] = hdulist['SCI'].data[:rows,:][okbin_rc]
+                    var_irc[i][okbin_rc] = hdulist['VAR'].data[:rows,:][okbin_rc]
                     okrow_r = okbin_rc.any(axis=1)
                     for r in np.where(okrow_r)[0]:
                         rowmean = sci_irc[i,r][okbin_rc[r]].mean()
@@ -181,11 +198,11 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
             for (i,image) in enumerate(config_dict[config]['object']):
                 hdu = pyfits.open(image)
                 if cleanhistory == 'CRCLEAN: None':                
-                    hdu['BPM'].data[iscr_irc[i]] = 1
+                    hdu['BPM'].data[:rows,:][iscr_irc[i]] = 1
                     hdu[0].header['HISTORY'][historyidx] = \
                         ('CRCLEAN: upper= %3.1f, lower= %3.1f, sigmaveto= %3.1f' % (upperfence,lowerfence,sigmaveto))
                 hdu, splitrow = specpolsplit(hdu, splitrow=splitrow)
-                hdu['BPM'].data[wavmap_orc==0.] = 1 
+                hdu['BPM'].data[:rows,:][wavmap_orc==0.] = 1 
                 hdu.append(hduwav)
                 for f in ('SCI','VAR','BPM','WAV'): hdu[f].header['CTYPE3'] = 'O,E'
                 hdu.writeto('w'+image,overwrite='True')
@@ -193,7 +210,7 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
 
     return
 
-def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile, 
+def pol_wave_map(hduarc, image_id, drow_oc, rows, cols, lampfile, 
                  function='legendre', order=3, automethod="Matchlines",
                  log=None, logfile=None):
     """ Create a wave_map for an arc image
@@ -207,8 +224,8 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
     hduarc: fits.HDUList
        Polarimetric arc data. This data should be split into O+E beams
 
-    image_no: int
-       File number of observations
+    image_id: str
+       Arc identifier
 
     rows: int
        Nubmer of rows in original data
@@ -254,7 +271,7 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
     legy_od = np.zeros((2,2))
 
     lam_X = rssmodelwave(grating,grang,artic,trkrho,cbin,cols,date)
-#    np.savetxt("lam_X_"+str(image_no)+".txt",lam_X,fmt="%8.3f")
+#    np.savetxt("lam_X_"+image_id+".txt",lam_X,fmt="%8.3f")
     C_f = np.polynomial.legendre.legfit(np.arange(cols),lam_X,3)[::-1]
 
     for o in (0,1):
@@ -274,13 +291,13 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
 
         #write out temporary image to run specidentify
         hduarc['SCI'].data = arc_yc
-        arcimage = "arc_"+str(image_no)+"_"+str(o)+".fits"
-        dbfilename = "arcdb_"+str(image_no)+"_"+str(o)+".txt"
+        arcimage = "arc_"+image_id+"_"+str(o)+".fits"
+        dbfilename = "arcdb_"+image_id+"_"+str(o)+".txt"
 
      #  use for guessfile dbfile for other beam, or, if none, "arcdb_(img)_guess.txt"
-        otherdbfilename = "arcdb_"+str(image_no)+"_"+str(int(not(o==1)))+".txt"
+        otherdbfilename = "arcdb_"+image_id+"_"+str(int(not(o==1)))+".txt"
         if (not os.path.exists(otherdbfilename)):
-            otherdbfilename = "arcdb_"+str(image_no)+"_guess.txt"
+            otherdbfilename = "arcdb_"+image_id+"_guess.txt"
         guessfilename = ""
         ystart = axisrow_o[o]
 
@@ -288,7 +305,7 @@ def pol_wave_map(hduarc, image_no, drow_oc, rows, cols, lampfile,
             if (os.path.exists(otherdbfilename)):
                 row_Y = np.loadtxt(otherdbfilename,dtype=float,usecols=(0,),ndmin=1)
                 closestrow = row_Y[np.argmin(np.abs(row_Y - ystart))]
-                guessfilename="wavguess_"+str(image_no)+"_"+str(o)+".txt"  
+                guessfilename="wavguess_"+image_id+"_"+str(o)+".txt"  
                 guessfile=open(guessfilename, 'w')            
                 for line in open(otherdbfilename):
                     if (len(line.split())==0): continue             # ignore naughty dbfile extra lines
@@ -419,9 +436,10 @@ def wave_map(dbfilename, edgerow_d, rows, cols, ystart, order=3, log=None):
             cofrows=1
 
     if cofrows < 5:
-    # ignore spectral curvature: use ystart solution for all rows, undo the slit edge settings
-        log.message('TOO FEW USABLE DATABASE ROWS, USE CONSTANT, CENTER ROW' , with_header=False)                    
-        legcof_l = legcof_lY[:,legy_Y.astype(int)==ystart].ravel()
+    # ignore spectral curvature: use solution closest to ystart for all rows, undo the slit edge settings
+        log.message('TOO FEW USABLE DATABASE ROWS, USE CONSTANT, CENTER ROW' , with_header=False)
+        Yuse = np.argmin(np.abs(ystart - legy_Y))                    
+        legcof_l = legcof_lY[:,Yuse].ravel()
         wavmap_yc = np.tile(np.polynomial.legendre.legval(xfit_c,legcof_l)[:,None],rows/2).T
         edgerow_d = 0,rows/2
         cofrows = 1

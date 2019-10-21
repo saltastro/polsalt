@@ -30,6 +30,7 @@ def specpolsplit(hdu, splitrow=None, wollaston_file=None):
     """
 
     rows,cols = hdu[1].data.shape
+    rows = (rows/2) * 2                     # if odd number of rows, strip off the last one
 
     #determine the row to split the file from the estimated center
     if splitrow is None and wollaston_file:
@@ -46,22 +47,22 @@ def specpolsplit(hdu, splitrow=None, wollaston_file=None):
         bot = axisrow_o[0] - np.argmax(data_y[axisrow_o[0]::-1] <  0.5*data_y[axisrow_o[0]])
         splitrow = 0.5*(bot + top)
     elif splitrow is None and wollaston_file is None:
-         splitrow = rows/2.0
+        splitrow = rows/2.0
 
-
-    offset = int(splitrow - rows/2)                 # how far split is from center of detector
+    offset = int(splitrow - rows/2)          # how far split is from center of detector
 
     # split arc into o/e images
     padbins = (np.indices((rows,cols))[0]<offset) | (np.indices((rows,cols))[0]>rows+offset)
 
-    image_rc = np.roll(hdu['SCI'].data,-offset,axis=0)
+    image_rc = np.roll(hdu['SCI'].data[:rows,:],-offset,axis=0)
     image_rc[padbins] = 0.
-    hdu['SCI'].data = image_rc.reshape((2,rows/2,cols))
-    var_rc = np.roll(hdu['VAR'].data,-offset,axis=0)
+    var_rc = np.roll(hdu['VAR'].data[:rows,:],-offset,axis=0)
     var_rc[padbins] = 0.
-    hdu['VAR'].data = var_rc.reshape((2,rows/2,cols))
-    bpm_rc = np.roll(hdu['BPM'].data,-offset,axis=0)
+    bpm_rc = np.roll(hdu['BPM'].data[:rows,:],-offset,axis=0)
     bpm_rc[padbins] = 1
+
+    hdu['SCI'].data = image_rc.reshape((2,rows/2,cols))
+    hdu['VAR'].data = var_rc.reshape((2,rows/2,cols))
     bpm_orc = bpm_rc.reshape((2,rows/2,cols))
     hdu['BPM'].data = bpm_orc
 

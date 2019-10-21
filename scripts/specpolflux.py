@@ -67,8 +67,10 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
 
   # Create new fluxdb files if new data present
     eclist = sorted(glob.glob('ec*.fits'))
-    obs_i,config_i,obstab,configtab = configmap(eclist,confitemlist)
-    obss = len(obstab)
+    obss = 0
+    if len(eclist): 
+        obs_i,config_i,obstab,configtab = configmap(eclist,confitemlist)
+        obss = len(obstab)
 
     for obs in range(obss):
         object,config = obstab[obs]
@@ -84,7 +86,6 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
 
       # It's a new flux standard, process it
         s = np.where(object==calspstname_s)[0][0]
-
         spstfile=iraf.osfn("pysalt$data/standards/spectroscopic/"+calspstfile_s[s])
         wav_f,ABmag_f = np.loadtxt(spstfile,usecols=(0,1),unpack=True)
         flam_f = 10.**(-0.4*(ABmag_f+2.402))/(wav_f)**2
@@ -172,6 +173,8 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         fluxcal_w = np.zeros(wavs)
 
       # average all applicable fluxdb entries after interpolation onto wavelength grid
+      # if necessary, block average onto ~50Ang grid, then average onto 50 Ang grid
+      # interpolate onto configuration for fluxcal
         fluxcalhistory = "FluxCal: "                                                        
         fluxcallog = fluxcalhistory
         for e in fluxdbentry_e:

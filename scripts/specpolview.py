@@ -66,7 +66,7 @@ def specpolview(infile_list, **kwargs):
         errbin = float(bin[ :bin.index('%')])
     elif bin.count('A'): 
         bintype = 'wavl'
-        blk = int(bin[ :bin.index('A')])
+        blk = float(bin[ :bin.index('A')])
     elif (bin != 'unbin'): 
         print "unrecognized binning option, set to unbinned"
         bintype = 'unbin'
