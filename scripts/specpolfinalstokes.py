@@ -28,7 +28,7 @@ datadir = polsaltdir+'/polsalt/data/'
 sys.path.extend((polsaltdir+'/polsalt/',))
 
 import specpolview as spv
-from specpolutils import datedfile, datedline
+from specpolutils import datedfile, datedline, angle_average
 from specpolflux import specpolflux
 
 np.set_printoptions(threshold=np.nan)
@@ -85,6 +85,9 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                 continue
             allrawlist.append([i,object,config,wvplt,cycle])
         configlist = sorted(list(set(ele[2] for ele in allrawlist)))       # unique configs
+        if debug:
+            print "allrawlist: ",allrawlist            
+            print "configlist: ",configlist
 
     # input correct HWCal and TelZeropoint calibration files
         dateobs = obsdict['DATE-OBS'][0].replace('-','')
@@ -162,16 +165,16 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
             var_jSw = np.zeros_like(stokes_jSw)
             covar_jSw = np.zeros_like(stokes_jSw)
             bpm_jSw = np.zeros_like(stokes_jSw).astype(int)
+            telpa_j = np.zeros(rawstokes)
             comblist = []
 
             for j in range(rawstokes):
                 i,object,config,wvplt,cycle = rawlist[j]
+                lampid = pyfits.getheader(infilelist[i],0)['LAMPID'].strip().upper()
+                telpa_j[j] = float(pyfits.getheader(infilelist[i],0)['TELPA'])
+                if lampid != "NONE": pacaltype ="Instrumental"                
                 if j==0:
                     cycles = 1
-                    lampid = pyfits.getheader(infilelist[i],0)['LAMPID'].strip().upper()
-                    telpa = float(pyfits.getheader(infilelist[i],0)['TELPA'])
-                    if lampid != "NONE": pacaltype ="Instrumental"
-                    if pacaltype == "Equatorial": eqpar_w = hpar_w + dpa + (telpa % 180)
               # if object,config,wvplt changes, start a new comblist entry
                 else:   
                     if rawlist[j-1][1:4] != rawlist[j][1:4]: cycles = 1
@@ -189,11 +192,11 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                     rawtel0_sw =    \
                         specpolrotate(tel0_sw,0,0,dpatelraw_w,normalized=True)[0]
                     rawtel0_sw[:,okcal_w] *= heff_w[okcal_w]
-                    stokes_jSw[j,1,okcal_w] -= stokes_jSw[j,0,okcal_w]*rawtel0_sw[0,okcal_w]     
+                    stokes_jSw[j,1,okcal_w] -= stokes_jSw[j,0,okcal_w]*rawtel0_sw[0,okcal_w]
                 if cycles==1:
-                    comblist.append((j,object,config,wvplt,1,wppat))
+                    comblist.append((j,object,config,wvplt,1,wppat,pacaltype))
                 else:
-                    comblist[-1] = (j,object,config,wvplt,cycles,wppat)
+                    comblist[-1] = (j,object,config,wvplt,cycles,wppat,pacaltype)
 
         # combine multiple cycles as necessary.  Absolute stokes is on a per cycle basis.
         # polarimetric combination on normalized stokes basis 
@@ -228,7 +231,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
             syserrcyclenet_k = np.zeros(combstokess)
 
             for k in range(combstokess):         
-                j,object,config,wvplt,cycles,wppat = comblist[k]
+                j,object,config,wvplt,cycles,wppat,pacaltype = comblist[k]
                 jlistk.append(range(j-cycles+1,j+1))                                
                 Jlistk.append([int(rawlist[jj][4])-1 for jj in range(j-cycles+1,j+1)])  # J = cycle-1, counting from 0        
                 nstokes_Jw = np.zeros((cycles,wavs))
@@ -295,7 +298,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                             iscull_jw[jlistk[k]].astype(int).reshape((-1,wavs)))).T, fmt="%8.2f %3i "+cycles*" %3i") 
 
                 if ((object != obsobject) | (config != obsconfig)):
-                    obslist.append([k,object,config,wppat,1])
+                    obslist.append([k,object,config,wppat,1,pacaltype])          
                     obsobject = object; obsconfig = config
                 else:
                     obslist[-1][4] +=1
@@ -334,6 +337,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                 if cycles > 1:
                     nstokeserr_Jw = np.zeros((cycles,wavs))
                     nerr_Jw = np.zeros((cycles,wavs))
+                    
                     for J in range(cycles):
                         okJ_w = ok_w & (bpm_Jw[J] ==0)
                         nstokes_Jw[J][okJ_w] = stokes_JSw[J,1][okJ_w]/stokes_JSw[J,0][okJ_w]
@@ -343,6 +347,9 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                         okall_w &= (nvar_w > 0.)
                         nerr_Jw[J,okall_w] = np.sqrt(nvar_w[okall_w])
 
+                    if (okall_w.sum()==0):
+                        print "Bad data in one of the cycles for wp pair ",comblist[k][3]
+                        exit()
                     nstokessyserr_J = np.average(nstokeserr_Jw[:,okall_w],weights=1./nerr_Jw[:,okall_w],axis=1)
                     nstokeserr_Jw -= nstokessyserr_J[:,None]                   
                     for J,j in enumerate(jlistk[k]):
@@ -360,12 +367,12 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
             obss = len(obslist)
 
             for obs in range(obss):
-
-                k0,object,config,wppat,pairs = obslist[obs]
+                k0,object,config,wppat,pairs,pacaltype = obslist[obs]
                 patpairs = patternpairs[wppat]
                 klist = range(k0,k0+pairs)                                      # entries in comblist for this obs
+                jlist = list(np.array([jlistk[k] for k in klist]).flatten())
+                telpa = angle_average(telpa_j[jlist])
                 obsname = object+"_"+config
-
                 wplist = [comblist[k][3][1:] for k in klist]
                 patwplist = sorted((patpairs*"%1s%1s " % tuple(patterndict[wppat].flatten())).split())
                 plist = [patwplist.index(wplist[P]) for P in range(pairs)]
@@ -586,6 +593,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
 
                     if not HW_Cal_override:
                 # apply hw efficiency, equatorial PA rotation calibration
+                        eqpar_w = hpar_w + dpa + (telpa % 180) 
                         stokes_Fw[1:,ok_w] /= heff_w[ok_w]
                         var_Fw[1:,ok_w] /= heff_w[ok_w]**2
                         covar_Fw[1:,ok_w] /= heff_w[ok_w]**2
@@ -604,6 +612,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                     hduout['BPM'].data = bpm_Fw.astype('uint8').reshape((3,1,-1))
                     hduout['BPM'].header['CTYPE3'] = 'I,Q,U'
 
+                    hduout[0].header['TELPA'] =  round(telpa,4)
                     hduout[0].header['WPPATERN'] = wppat
                     hduout[0].header['PATYPE'] = pacaltype
                     if len(calhistorylist):

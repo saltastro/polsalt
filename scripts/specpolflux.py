@@ -10,6 +10,7 @@ if an appropriate fluxcal file now exists, apply to listed _stokes.fits files
 import os
 import sys
 import glob
+import copy
 import shutil
 import inspect
 
@@ -51,17 +52,25 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         dtype=str,usecols=(0,1),unpack=True)
     namelen = max(map(len,calspstname_s))
 
-    confitemlist = ['GRATING','GR-ANGLE','CAMANG']
+    confitemList = ['DATE-OBS','GRATING','GR-ANGLE','CAMANG']
 
   # Find fluxdb files already in this directory
-    fluxdbtab = Table(names=['no','OBJECT']+confitemlist,        \
-               dtype=[int,'S'+str(namelen),'S6',float,float])
+    fluxdbtab = Table(names=['no','OBJECT']+confitemList,        \
+               dtype=[int,'S'+str(namelen),'S10','S6',float,float])
     fluxdblist = sorted(glob.glob('fluxdb*.txt'))
-    olddbentries = len(fluxdblist)
-    for e,dbfile in enumerate(fluxdblist):        
+    goodfluxdblist = copy.copy(fluxdblist)
+
+    for e,dbfile in enumerate(fluxdblist):
+        if (open(dbfile).read().count("#") < 5):
+            printstdlog('\n    Invalid flux file '+dbfile+', not used', logfile)
+            goodfluxdblist.remove(dbfile)
+            continue       
         confdat_d = np.genfromtxt(dbfile,usecols=2,comments='?', \
-                max_rows=4,dtype=str)
+                max_rows=5,dtype=str)
         fluxdbtab.add_row(np.insert(confdat_d,0,e+1))
+
+    fluxdblist = goodfluxdblist    
+    olddbentries = len(fluxdblist)
     if olddbentries: 
         printstdlog('\n    Existing Fluxdb:\n'+str(fluxdbtab), logfile)
 
@@ -69,7 +78,7 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
     eclist = sorted(glob.glob('ec*.fits'))
     obss = 0
     if len(eclist): 
-        obs_i,config_i,obstab,configtab = configmap(eclist,confitemlist)
+        obs_i,config_i,obstab,configtab = configmap(eclist,confitemList)
         obss = len(obstab)
 
     for obs in range(obss):
@@ -80,23 +89,32 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         if object not in calspstname_s: continue
 
         newfluxdbtab = Table( \
-            names=['no','OBJECT']+confitemlist,dtype=[int,'S'+str(namelen),'S6',float,float])
+            names=['no','OBJECT']+confitemList,dtype=[int,'S'+str(namelen),'S10','S6',float,float])
         newfluxdbtab.add_row([len(fluxdbtab)+1,object]+list(configtab[obs]))       
         if Table(newfluxdbtab.columns[1:]) in Table(fluxdbtab.columns[1:]): continue
 
       # It's a new flux standard, process it
+        printstdlog('\n    New Fluxdb entry:\n'+str(newfluxdbtab), logfile)
         s = np.where(object==calspstname_s)[0][0]
         spstfile=iraf.osfn("pysalt$data/standards/spectroscopic/"+calspstfile_s[s])
         wav_f,ABmag_f = np.loadtxt(spstfile,usecols=(0,1),unpack=True)
-        flam_f = 10.**(-0.4*(ABmag_f+2.402))/(wav_f)**2
-
         wbinedge_f = (wav_f[1:] + wav_f[:-1])/2.
         wbinedge_f = np.insert(wbinedge_f,0,2.*wav_f[0]-wbinedge_f[0])
         wbinedge_f = np.append(wbinedge_f,2.*wav_f[-1]-wbinedge_f[-1])
+        flam_f = 10.**(-0.4*(ABmag_f+2.402))/(wav_f)**2
+
+      # for HST standards, scrunch down to 50A bins
+        if (wav_f[0] < 3000.):
+            wbinedge_F = np.arange(3000.,11000.,50.)
+            binedge_F = interp1d(wbinedge_f,np.arange(wbinedge_f.shape[0]))(wbinedge_F)
+            flam_F = scrunch1d(flam_f,binedge_F)/np.diff(binedge_F)       # mean over new flux bin
+            wav_f = (wbinedge_F[:-1] + wbinedge_F[1:])/2.
+            flam_f = flam_F
+            wbinedge_f = wbinedge_F
       
       # average multiple samples,E,O
         hdul = pyfits.open(eclist[i_j[0]])
-        grating,grang,artic = configtab[config]
+        dateobs,grating,grang,artic = configtab[config]
         wav0 = hdul['SCI'].header['CRVAL1']
         dwav = hdul['SCI'].header['CDELT1']
         wavs = hdul['SCI'].data.shape[-1]
@@ -109,16 +127,41 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
             phot_w += hdul['SCI'].data.reshape((2,-1)).sum(axis=0)                
             count_w += (hdul['BPM'].data.reshape((2,-1))==0).sum(axis=0)
             exptime +=  hdul['SCI'].header['EXPTIME']  
-        int_w = phot_w/(2*samples*exptime)
+        int_w = phot_w/exptime                                  # phot/sec/bin, E+O sum
         ok_w = (count_w == 2*samples)
+
+      # check for gain corrections. BPM==2 marks internal ccd amp intersections
+        aw_pA = np.array(np.where(hdul['BPM'].data.reshape((2,-1)) == 2))[1].reshape((2,-1))
+        awmin_A,aw_A,awmax_A = (aw_pA.min(axis=0), aw_pA.mean(axis=0), aw_pA.max(axis=0))
+        wloList = [0, awmax_A[0]+1, aw_A[[0,1]].mean(), awmax_A[1]+1, aw_A[[1,2]].mean(), awmax_A[2]+1]
+        whiList = [awmin_A[0]-1, aw_A[[0,1]].mean(), awmin_A[1]-1, aw_A[[1,2]].mean(), awmin_A[2]-1,wavs]
+        wList = [0,aw_A[0],aw_A[[0,1]].mean(),aw_A[1],aw_A[[1,2]].mean(),aw_A[2],wavs]
+        photedge_da = np.zeros((2,6))
+        for d,a in np.ndindex(2,6):
+            w1 = wloList[a] + d*(whiList[a]-wloList[a])*2/3
+            w2 = whiList[a] - (1-d)*(whiList[a]-wloList[a])*2/3
+            use_w = (ok_w & (np.arange(wavs) >= w1) & (np.arange(wavs) <= w2))
+            cof_c = np.polyfit(np.arange(wavs)[use_w],phot_w[use_w],1)
+            if debug: print d,a,('%8.2f %8.0f' % tuple(cof_c))
+            photedge_da[d,a] = np.polyval(cof_c,wList[a+d])
+        photrat_A = photedge_da[0,1:]/photedge_da[1,:-1]
+        photrat_a = np.insert(np.cumprod(photrat_A),0,1.)
+        historyDict = dict([line.split(' ',1) for line in hdul['SCI'].header['HISTORY'] ])
+        if historyDict.has_key('GainCorrection:'):
+            printstdlog(('\n    Gain cors : '+historyDict['GainCorrection:']), logfile)
+        else:
+            printstdlog(('\n    no gain correction'), logfile)
+        printstdlog(('    Gain Ratio:          '+6*'%6.4f ' % tuple(photrat_a)), logfile)
+
       # scrunch onto flux star grid
         wav_w = np.arange(wav0,wav0+wavs*dwav,dwav)
         binedge_f = (wbinedge_f - (wav_w[0] - dwav/2.))/dwav
-        int_f = scrunch1d(int_w,binedge_f)
-        ok_f = (scrunch1d((~ok_w).astype(int),binedge_f) == 0)   # good flux bins have no bad wavs
+        int_f = scrunch1d(int_w,binedge_f)/np.diff(binedge_f)       # mean of int_w over flux bin
+    
+        ok_f = (scrunch1d((~ok_w).astype(int),binedge_f) == 0)      # good flux bins have no bad wavs
         ok_f &= ((wav_f > wav_w[0]) & (wav_f < wav_w[-1]))
 
-      # save flux/intensity mean, extrapolate to edge
+      # save flux/intensity mean over flux standard bin, extrapolate to edge
         fluxcal_F = flam_f[ok_f]/int_f[ok_f]
         wav_F = wav_f[ok_f]
         fluxcalslope_F = (fluxcal_F[1:]-fluxcal_F[:-1])/(wav_F[1:]-wav_F[:-1])
@@ -127,14 +170,12 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         fluxcal_F = np.insert(fluxcal_F,0,fluxcal_F[0]-fluxcalslope_F[0]*(wav_F[1]-wav_F[0]))
         fluxcal_F = np.append(fluxcal_F,fluxcal_F[-1]+fluxcalslope_F[-1]*(wav_F[-1]-wav_F[-2]))
         fluxdbfile = 'fluxdb_'+calspstname_s[s]+'_c'+str(config)+'.txt'
-        hdr = ("OBJECT: "+object+"\nGRATING: %s \nARTIC: %s \nGRANG: %s" \
-            % (grating,grang,artic))
+        hdr = ("OBJECT: "+object+"\nDATEOBS: %s \nGRATING: %s \nARTIC: %s \nGRANG: %s" \
+            % (dateobs,grating,grang,artic))
         np.savetxt(fluxdbfile, np.vstack((wav_F,fluxcal_F)).T,fmt="%8.2f %12.3e ",header=hdr)
         fluxdbtab.add_row(list(newfluxdbtab[0]))
         fluxdblist.append(fluxdbfile)
     dbentries = len(fluxdbtab)
-    if (dbentries>olddbentries):
-        printstdlog('\n    New Fluxdb entries:\n'+str(fluxdbtab[olddbentries:]), logfile)
                 
   # do fluxcal on listed stokes.fits files
     if len(fluxdbtab)==0:
@@ -142,10 +183,13 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         return fluxcal_w
 
     if (type(infilelist) is str): infilelist = [infilelist,]
+    if len(infilelist)==0:
+        print "No files to calibrate"
+        exit()
         
-    obs_i,config_i,obstab,configtab = configmap(infilelist,confitemlist)
+    obs_i,config_i,obstab,configtab = configmap(infilelist,confitemList)
     obss = len(obstab)
-    fluxdbconftab = fluxdbtab[confitemlist]
+    fluxdbconftab = fluxdbtab[confitemList]
 
     cunitfluxed = 'erg/s/cm^2/Ang'          # header keyword CUNIT3 if data is already fluxed     
     for obs in range(obss):
@@ -169,22 +213,22 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         wav0 = hdul['SCI'].header['CRVAL1']
         dwav = hdul['SCI'].header['CDELT1']
         wavs = hdul['SCI'].data.shape[-1]
+        exptime =  hdul['SCI'].header['EXPTIME']
         wav_w = np.arange(wav0,wav0+wavs*dwav,dwav)            
         fluxcal_w = np.zeros(wavs)
 
       # average all applicable fluxdb entries after interpolation onto wavelength grid
       # if necessary, block average onto ~50Ang grid, then average onto 50 Ang grid
-      # interpolate onto configuration for fluxcal
-        fluxcalhistory = "FluxCal: "                                                        
-        fluxcallog = fluxcalhistory
+      # interpolate onto configuration for fluxcal                                                     
+        fluxcallog = ''
         for e in fluxdbentry_e:
-            wav_F,fluxcal_F = np.loadtxt(fluxdblist[e],skiprows=4,comments='?', \
+            wav_F,fluxcal_F = np.loadtxt(fluxdblist[e],skiprows=5,comments='?', \
                 dtype=float,unpack=True)
             fluxcal_w += interp1d(wav_F,fluxcal_F,bounds_error=False)(wav_w)
-            fluxcalhistory += " "+fluxdblist[e]
-            fluxcallog += "  "+str(e+1)+" "+fluxdblist[e]
+            hdul[0].header.add_history("FluxCal: "+fluxdbconftab[e]["DATE-OBS"]+' '+fluxdblist[e])
+            fluxcallog += ('\n    '+str(e+1)+' '+fluxdbconftab[e]["DATE-OBS"]+' '+fluxdblist[e])
         fluxcal_w /= len(fluxdbentry_e)
-        fluxcal_w = (np.nan_to_num(fluxcal_w))
+        fluxcal_w = (np.nan_to_num(fluxcal_w))/exptime
         hdul['SCI'].data *= fluxcal_w
         hdul['SCI'].header['CUNIT3'] = cunitfluxed
         hdul['VAR'].data *= fluxcal_w**2
@@ -192,10 +236,9 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         hdul['COV'].data *= fluxcal_w**2
         hdul['COV'].header['CUNIT3'] = cunitfluxed
         hdul['BPM'].data = ((hdul['BPM'].data > 0) | (fluxcal_w ==0.)).astype('uint8')
-        hdul[0].header.add_history(fluxcalhistory)
         hdul.writeto(infilelist[iobs],overwrite=True)
 
-        printstdlog((('\n    %s '+fluxcallog) % infilelist[iobs]), logfile)
+        printstdlog((('\n    %s Fluxcal:'+fluxcallog) % infilelist[iobs]), logfile)
 
     return fluxcal_w
 # ----------------------------------------------------------
