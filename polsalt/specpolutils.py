@@ -1,6 +1,25 @@
+
+# polarimetry utilities, including:
+
+# datedfile(filename,date)
+# datedline(filename,date)
+# greff(grating,grang,artic,dateobs,wav)
+# rssdtralign(datobs,trkrho)
+# rssmodelwave(grating,grang,artic,trkrho,cbin,cols,datobs)
+# configmap(infilelist,confitemlist,debug='False')
+# image_number(image_name)
+# list_configurations(infilelist, log)
+# configmapset(obs_tab, config_list=('GRATING','GR-ANGLE', 'CAMANG'))
+# list_configurations_old(infilelist, log)
+# blksmooth1d(ar_x,blk,ok_x)
+# angle_average(ang_d)
+# printstdlog(string,logfile)
+
 import os, sys, glob, shutil, inspect
 import numpy as np
 from astropy.io import fits as pyfits, ascii
+from astropy.coordinates import SkyCoord
+from astropy import units as u
 from scipy.interpolate import interp1d
 from scipy import interpolate as ip
 
@@ -128,7 +147,7 @@ def rssdtralign(datobs,trkrho):
     rcflex_d = (rc0_pd[0:2]*flex_p[:,None]).sum(axis=0)
 
     row0,col0,C0 = np.array(datedline(DATADIR+"RSSimgalign.txt",datobs).split()[1:]).astype(float)
-    row0,col0 = np.array([row0,col0]) - rcflex_d
+    row0,col0 = np.array([row0,col0]) + rcflex_d        # sign changed 20190610
 
     return row0, col0, C0
 # ------------------------------------
@@ -431,8 +450,18 @@ def blksmooth1d(ar_x,blk,ok_x):
     oksm_x = (arsm_x != 0.)
 
     return arsm_x,oksm_x
-
 # ----------------------------------------------------------
+
+def angle_average(ang_d):
+# average nparray of angles (floating deg), allowing for wrap at 360
+  
+    sc_d = SkyCoord(ang_d * u.deg,0. * u.deg)
+    sep_d = sc_d[0].separation(sc_d)
+    sep_d[sc_d[0].position_angle(sc_d).deg == 270.] *= -1.
+    angmean = (sc_d[0].ra + sep_d.mean()).deg % 360.
+    return angmean
+# ----------------------------------------------------------
+
 def printstdlog(string,logfile):
     print string
     print >>open(logfile,'a'), string

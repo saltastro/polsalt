@@ -20,7 +20,7 @@ from pyraf import iraf
 from iraf import pysalt
 from saltobslog_kn import obslog    # avoid infiles sort and rejection of HWP-Ang ints in header
 from saltsafelog import logging
-from specpolutils import greff
+from specpolutils import greff, angle_average
 
 import reddir
 # from . import reddir
@@ -62,7 +62,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
     patternfile = open(datadir + 'wppaterns.txt', 'r')
     with logging(logfile, debug) as log:
 
-        log.message('specpolrawstokes version: 20180624', with_header=False) 
+        log.message('specpolrawstokes version: 20191111', with_header=False) 
      
         # create the observation log
         obs_dict = obslog(list(infilelist))         # ensure infilelist not altered by obs_dict
@@ -100,7 +100,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
             dwav = hdul[0].header['CDELT1']
             wavs = hdul['SCI'].data.shape[-1]
 
-            confdat_d = [rbin, cbin, grating, grang, artic, dwav, wppat_i[i]]
+            confdat_d = [rbin, cbin, grating, grang, artic, dwav, wavs, wppat_i[i]]
             obsdat_d = [ object_i[i], rbin, cbin, grating, grang, artic, wppat_i[i]]
             if configs == 0:
                 confdat_cd = [confdat_d]
@@ -126,6 +126,9 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
             obs_i[i] = obs
 
         patternlist = patternfile.readlines()
+        if debug:
+            print "confdat_cd: ",confdat_cd
+            print "obsdat_od:  ",obsdat_od
 
         log.message(
             'Raw Stokes File     OBS CCDSUM GRATING  GR-ANGLE  CAMANG    WPPATERN',
@@ -259,6 +262,7 @@ def create_raw_stokes_file(firstpairList, secondpairList, wav0, wavs, output_fil
     covar_fOw = np.zeros_like(sci_fOw)
     bpm_fOw = np.zeros_like(sci_fOw)
     exptime_f = np.zeros(2)
+    telpa_f = np.zeros(2)
     dwav = pyfits.getheader(firstpairList[0], 'SCI', 1)['CDELT1']
     grating = pyfits.getheader(firstpairList[0], 'SCI')['GRATING'].strip()
     grang = float(pyfits.getheader(firstpairList[0], 'SCI')['GR-ANGLE'])
@@ -267,6 +271,7 @@ def create_raw_stokes_file(firstpairList, secondpairList, wav0, wavs, output_fil
     for f, imgList in enumerate([firstpairList, secondpairList]):
         hdulist = pyfits.open(imgList[0])
         exptime_f[f] = hdulist[0].header['EXPTIME']
+        telpa_f[f] = hdulist[0].header['TELPA']
         wav0f = pyfits.getheader(imgList[0], 'SCI', 1)['CRVAL1']
         c0 = int((wav0-wav0f)/dwav)
         sci_fOw[f] = hdulist['SCI'].data[:,:,c0:c0+wavs].reshape((2, -1))
@@ -274,13 +279,16 @@ def create_raw_stokes_file(firstpairList, secondpairList, wav0, wavs, output_fil
         covar_fOw[f] = hdulist['COV'].data[:,:,c0:c0+wavs].reshape((2, -1))
         bpm_fOw[f] = hdulist['BPM'].data[:,:,c0:c0+wavs].reshape((2, -1))
         if len(imgList) > 1:
+            telpa_i = np.zeros(len(imgList))
             for i in range(1,len(imgList)):
                 hdulist = pyfits.open(imgList[i])
                 exptime_f[f] += hdulist[0].header['EXPTIME']
+                telpa_i[i] = hdulist[0].header['TELPA']
                 sci_fOw[f] += hdulist['SCI'].data[:,:,c0:c0+wavs].reshape((2, -1))
                 var_fOw[f] += hdulist['VAR'].data[:,:,c0:c0+wavs].reshape((2, -1))
                 covar_fOw[f] += hdulist['COV'].data[:,:,c0:c0+wavs].reshape((2, -1))
-                bpm_fOw[f] = np.maximum(bpm_fOw[f],hdulist['BPM'].data[:,:,c0:c0+wavs].reshape((2, -1)))                
+                bpm_fOw[f] = np.maximum(bpm_fOw[f],hdulist['BPM'].data[:,:,c0:c0+wavs].reshape((2, -1))) 
+            telpa_f[f] =  angle_average(telpa_i)              
 
   # Mark as bad bins with negative intensities
     bpm_fOw[sci_fOw < 0] = 1
@@ -334,6 +342,7 @@ def create_raw_stokes_file(firstpairList, secondpairList, wav0, wavs, output_fil
     if wppat:
         hduout[0].header['WPPATERN'] = wppat
     hduout[0].header['EXPTIME'] =  exptime_f.sum()
+    hduout[0].header['TELPA'] =  round(angle_average(telpa_f),4)
     header = hdulist['SCI'].header.copy()
     header['VAREXT'] =  2
     header['COVEXT'] =  3

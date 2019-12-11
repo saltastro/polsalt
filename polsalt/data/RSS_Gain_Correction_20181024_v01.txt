@@ -1,0 +1,9 @@
+# RSS CCD amplifier gain
+# Correction to SALT pipeline fits header values
+# Bright/Fast 20181026
+# Gain Speed/amp  0     1      2      3      4      5
+  FAINT  SLOW 1.0000 1.0000 1.0000 1.0000 1.0000 1.0000
+  FAINT  FAST 1.0000 1.0000 1.0000 1.0000 1.0000 1.0000
+  BRIGHT SLOW 1.0000 1.0000 1.0000 1.0000 1.0000 1.0000    
+  BRIGHT FAST 1.0000 0.9983 1.1585 0.7434 1.1483 0.8597
+   
