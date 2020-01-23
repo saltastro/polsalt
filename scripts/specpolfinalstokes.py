@@ -370,7 +370,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                 k0,object,config,wppat,pairs,pacaltype = obslist[obs]
                 patpairs = patternpairs[wppat]
                 klist = range(k0,k0+pairs)                                      # entries in comblist for this obs
-                jlist = list(np.array([jlistk[k] for k in klist]).flatten())
+                jlist = sum([jlistk[k] for k in klist],[])
                 telpa = angle_average(telpa_j[jlist])
                 obsname = object+"_"+config
                 wplist = [comblist[k][3][1:] for k in klist]
