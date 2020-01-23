@@ -75,6 +75,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
                      [int(s[1])] for s in np.array(obs_dict['WP-STATE'])]
         wppat_i = np.array(obs_dict['WPPATERN'])
         object_i = np.array(obs_dict['OBJECT'])
+        bvisitid_i = np.array(obs_dict['BVISITID'])
         config_i = np.zeros(images, dtype='int')
         obs_i = -np.ones(images, dtype='int')
 
@@ -101,7 +102,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
             wavs = hdul['SCI'].data.shape[-1]
 
             confdat_d = [rbin, cbin, grating, grang, artic, dwav, wavs, wppat_i[i]]
-            obsdat_d = [ object_i[i], rbin, cbin, grating, grang, artic, wppat_i[i]]
+            obsdat_d = [object_i[i], bvisitid_i[i], rbin, cbin, grating, grang, artic, wppat_i[i]]
             if configs == 0:
                 confdat_cd = [confdat_d]
                 obsdat_od = [obsdat_d]
@@ -206,12 +207,15 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
                     else:
                         continue
 
-                name = object_i[i] + '_c' + str(config_i[i]) + '_h' + str(wpat_p[idxp]) + str(wpat_p[idxp+1])
+                name = object_i[i]
+                isname_o = (np.transpose(obsdat_od)[0]==name)
+                if (isname_o.sum() > 1):                        # label multiple visits of same target
+                    name += '_'+str(isname_o[:obs+1].sum())
+                name += '_c' + str(config_i[i]) + '_h' + str(wpat_p[idxp]) + str(wpat_p[idxp+1])
                 if (wpstate_i[i] == 'hqw'):
                     name += 'q' + ['m', 'p'][qsta_i[i] == 4] + ['m', 'p'][qsta_i[i + 1] == 4]
-
                 count = " ".join(name_n).count(name)
-                name += ('_%02i' % (count + 1))
+                name += ('_%02i' % (count + 1))                 # count + 1 = cycle count
 
                 create_raw_stokes_file(firstpairList, secondpairList, wav0, wavs,
                     output_file=name + '.fits', wppat=wppat_i[i], debug=debug)
