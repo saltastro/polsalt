@@ -20,13 +20,13 @@ from scipy import linalg as la
 import reddir
 datadir = os.path.dirname(inspect.getfile(reddir))+"/data/"
 
-from oksmooth import boxsmooth1d,blksmooth2d
+from rssmaptools import boxsmooth1d,blksmooth2d
 from pyraf import iraf
 from iraf import pysalt
 from saltobslog import obslog
 from saltsafelog import logging
 
-# np.seterr(invalid='raise')
+np.seterr(invalid='raise')
 np.set_printoptions(threshold=np.nan)
 debug = True
 
@@ -213,7 +213,7 @@ def skyflat(hdu,trow_o,corerows,axisrow_o,log,datadir,debug=False):
     line_oyc[:,:,0] = -1
     removeline_l = (axisval_lo == 0.).any(axis=1)
 
-    if (debug & lines): 
+    if (debug & (lines>0)): 
         np.savetxt(sciname+"_int_oly.txt",np.hstack((intvar_lo.T.reshape(-1,1), \
             axisval_lo.T.reshape(-1,1), int_loy.transpose(1,0,2).reshape((2*lines,-1)))).T,fmt="%9.5f")
         pyfits.PrimaryHDU(line_oyc.astype('int16')).writeto(sciname+'_line_oyc.fits',clobber=True)        

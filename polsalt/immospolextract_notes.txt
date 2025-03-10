@@ -1,0 +1,21 @@
+plan for immospolextract row-flexure correction
+
+- reference image is closest to cal image
+
+- compute drtot_ftp from NIR halfpoint relative to ref image
+- compute drsplit_ft and drmean_ft relative to ref image
+- compute drsplit_f = <drsplit_ft/(1+aY_t/25)>
+    a = -.262
+- compute dalfy_f bs flex rotation = b*drsplit_f
+    b = 0.1 deg * pixmm*rbin / .00806 = 12.407 * pixmm * rbin
+- correct drmean_ft for bs flex contribution = drsplit_f*(c + dY_t/25)
+    c =.09784
+    d = .00210 * 25 = .0525
+- compute dr_f guiding/flexure error from median of drmean_ft
+- add in dr and dalfy between ref and cal using flexure models
+- compute bs-corrected wavmap_ftpR (without dtr flexure correction to cal image).  for each f:
+    yx_dptW = RSScolpolcam(YX_ds,...,dalfyx_d=[dalfy_f,0])
+    wavmap_ftpR,dwavmap_ftpR,Cmap_ftpR = specmap(yx_dptW,wav_W,ri_tpR,ci_tpC,dWdY_ptW,hdulcal))
+- correct wavmaps for dr_f by simple shift (assumes guiding is small effect)
+
+Need mod to RSScolpolcam to include kwarg dalfyx_d.

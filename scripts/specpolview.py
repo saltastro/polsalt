@@ -1,4 +1,4 @@
-#! /usr/bin/env python
+#! /usr/bin/env python2.7
 
 """
 specpolview
@@ -28,12 +28,12 @@ import warnings
 #warnings.simplefilter("error")
 
 #---------------------------------------------------------------------------------------------
-def specpolview(infile_list, **kwargs):
+def specpolview(infileList, **kwargs):
     """View Stokes output results
 
     Parameters
     ----------
-    infile_list: list
+    infileList: str or list
        one or more _stokes.fits files
 
     bin=    unbin (default)
@@ -43,22 +43,29 @@ def specpolview(infile_list, **kwargs):
             True (plot errorbars)
     connect= '' (default) (if errors False, connect points)
             hist (if binned, use histogram connection)
+    yxlim=  [] (default) (plot limits, list of 4 if provided)
     type=   Ipt (default) (unbinned intensity/flux, binned % pol, deg PA)
             Iqu (unbinned intensity/flux, binned %q, %u, with optional rotate)
     save=   '' (default) (text to terminal)
             text (text to file)
             plot (terminal plot and pdf file)
             textplot (both)
+    overlay= ''  (default)
+            text file name, with Wavl, %P,  PA cols
     debug=: False (default)
             True (debug output)
     """
-    obss = len(infile_list)
+    
+    if (type(infileList)==str): infileList = [infileList,]
+    obss = len(infileList)
     bin = kwargs.pop('bin','unbin')
     errorbars = (kwargs.pop('errors','False') == 'True')
     connect = kwargs.pop('connect','')
+    yxlim = kwargs.pop('yxlim',[])
     plottype = kwargs.pop('type','Ipt')
     save = kwargs.pop('save','')
-    debug = (kwargs.pop('debug','False') == 'True')
+    overlay = kwargs.pop('overlay','')    
+    debug = (kwargs.pop('debug','False') == 'True')  
 
     bintype = bin
     if bin.count('%'): 
@@ -75,6 +82,16 @@ def specpolview(infile_list, **kwargs):
     if (connect not in ('','hist')): 
         print "unrecognized connect option"
         exit()
+        
+    askpltlim = True
+    tcenter = 0.            
+    if (len(yxlim)>0):
+        yxlimList = yxlim.split(',')
+        ismanlim_i = np.array([len(ys)>0 for ys in yxlimList])
+        if ismanlim_i[0]:
+            tcenter = np.radians((float(yxlimList[0]) + float(yxlimList[1]))/2.)                                
+        askpltlim = False 
+               
     if (plottype not in ('Ipt','Iqu')): 
         print "unrecognized type option"
         exit()
@@ -82,19 +99,18 @@ def specpolview(infile_list, **kwargs):
     saveplot = (save.count('plot')>0)
 
     plotcolor_o = ['b','g','r','c','m','y','k']
-    askpltlim = True
-    tcenter = 0.
     trotate = 0.
     cunitfluxed = 'erg/s/cm^2/Ang'          # header keyword CUNIT3 if data is already fluxed 
  
     for obs in range(obss):
-        hdul = pyfits.open(infile_list[obs])
-        name = os.path.basename(infile_list[obs]).split('.')[0]
+        hdul = pyfits.open(infileList[obs])
+        name = '_'.join(os.path.basename(infileList[obs]).split('.')[0].split('_')[:-1]) # take "stokes" off end
         obsdate = hdul[0].header['DATE-OBS']
         stokes_Sw = hdul['SCI'].data[:,0,:]
         var_Sw = hdul['VAR'].data[:,0,:]
         covar_Sw = hdul['COV'].data[:,0,:]
         bpm_Sw = hdul['BPM'].data[:,0,:]
+        
         isfluxed=False
         if 'CUNIT3' in hdul['SCI'].header:
             isfluxed=(hdul['SCI'].header['CUNIT3'].replace(' ','') ==cunitfluxed)
@@ -104,6 +120,7 @@ def specpolview(infile_list, **kwargs):
         wav_w = wav0 + dwav*np.arange(wavs)
         ok_Sw = (bpm_Sw==0)
         ok_w = ok_Sw.all(axis=0)
+        
         if debug:
             np.savetxt("input.txt",np.vstack((wav_w,ok_w,stokes_Sw,var_Sw)).T,   \
             fmt="%7.2f %3i "+7*"%10.4e ")
@@ -137,19 +154,19 @@ def specpolview(infile_list, **kwargs):
 
     # calculate, print means (stokes average in unnorm space)
         hassyserr = ('SYSERR' in hdul[0].header)
-
+        
         avstokes_s, avvar_s, avwav = avstokes(stokes_Sw[:,ok_w],var_Sw[:-1][:,ok_w],covar_Sw[:,ok_w],wav_w[ok_w]) 
-        avstokes_S = np.insert(avstokes_s,0,1.)
-        avvar_S = np.insert(avvar_s,0,1.)
+        avstokes_s = np.insert(avstokes_s,0,1.)
+        avvar_s = np.insert(avvar_s,0,1.)
 
         print ("\n%16s %16s  Wtd mean   " % (name,obsdate)),
         if hassyserr: print ('Syserr: %8.3f' % hdul[0].header['SYSERR']),
         print           
-        printstokes(avstokes_S,avvar_S,avwav)
+        printstokes(avstokes_s,avvar_s,avwav)
  
         plotcolor = plotcolor_o[obs % len(plotcolor_o)]
     # plot intensity
-        label = name
+        label = obsdate+' '+name
         if name.count("_") ==0:             # diffsum multiplots
             label = name[-4:] 
         namelist.append(name)
@@ -165,9 +182,9 @@ def specpolview(infile_list, **kwargs):
       # get manual plot limits, resetting tcenter (PA wrap center) if necessary
         if saveplot:
             while (askpltlim):
-                yxlimlisti = (raw_input('\nOptional scale (bottom-top, comma sep): ')).split(',')
-                if len(''.join(yxlimlisti))==0: yxlimlisti = []
-                ismanlim_i = np.array([len(ys)>0 for ys in yxlimlisti])
+                yxlimList = (raw_input('\nOptional scale (bottom-top, comma sep): ')).split(',')
+                if len(''.join(yxlimList))==0: yxlimList = []
+                ismanlim_i = np.array([len(ys)>0 for ys in yxlimList])
                 if ismanlim_i.sum() == 0: 
                     askpltlim = False
                     break
@@ -178,7 +195,7 @@ def specpolview(infile_list, **kwargs):
                         continue
                     if ((plottype == 'Ipt') | (plottype == 'IPt')):
                         if ismanlim_i[itbottom]:
-                            tcenter = np.radians((float(yxlimlisti[itbottom]) + float(yxlimlisti[ittop]))/2.)
+                            tcenter = np.radians((float(yxlimList[itbottom]) + float(yxlimList[ittop]))/2.)
                     if ((plottype == 'Iqu') | (plottype == 'IQU')):
                         trotate = float(raw_input('\nOptional PA zeropoint (default 0): ') or '0')
                         if trotate:
@@ -186,11 +203,12 @@ def specpolview(infile_list, **kwargs):
                             plot_S[2].set_ylabel('Stokes U (%%)  PA0= %7.1f deg' % trotate)  
                         if (len(ismanlim_i) == 2):
                             ismanlim_i = np.tile(ismanlim_i,2)
-                            yxlimlisti += yxlimlisti
+                            yxlimList += yxlimList
                                                        
                 askpltlim = False
                      
       # assemble data
+      
         if trotate:
             stokes_Sw,var_Sw,covar_Sw = spf.specpolrotate(stokes_Sw,var_Sw,covar_Sw,-trotate)
 
@@ -263,9 +281,12 @@ def specpolview(infile_list, **kwargs):
             bin_Vw = (bin_V[:,None] == bin_w[None,:])
             stokes_SV = (stokes_Sw[:,None,:]*bin_Vw).sum(axis=2)
             var_SV = ((var_Sw[:stokess,None,:] + 2.*covar_Sw[:,None,:])*bin_Vw).sum(axis=2)  
-            bpm_SV = ((bpm_Sw[:,None,:]*bin_Vw).sum(axis=2)==bin_Vw.sum(axis=1)).astype(int)
+            bpm_SV = ((bpm_Sw[:,None,:]*bin_Vw).sum(axis=2)==bin_Vw.sum(axis=1)).astype(int)           
             ok_SV = (bpm_SV == 0)
             ok_V = ok_SV.all(axis=0)
+            if isfluxed:
+                stokes_SV[:,ok_V] = stokes_SV[:,ok_V]/bin_Vw[ok_V].sum(axis=1)[None,:]
+                var_SV[:,ok_V] = var_SV[:,ok_V]/((bin_Vw[ok_V].sum(axis=1))**2)[None,:]             
             bin_vw = bin_Vw[ok_V]
             wav_v = (wav_w[None,:]*bin_vw).sum(axis=1)/bin_vw.sum(axis=1)
             dwavleft_v = wav_v - wav_w[(np.argmax((wav_w[None,:]*bin_vw)>0,axis=1))-1] + dwav/2.
@@ -277,9 +298,13 @@ def specpolview(infile_list, **kwargs):
                 err_sv = 100.*np.sqrt(var_SV[1:,ok_V]/stokes_SV[0,ok_V]**2)
       
             lwdefault = matplotlib.rcParams['lines.linewidth']
+            if overlay:
+                overlay_xo = np.loadtxt(overlay,unpack=True)
+                wav_o = overlay_xo[0]
+                overlay_po = overlay_xo[1:]
             for S in range(1,stokess):
                 if debug: np.savetxt('errbar_'+str(S)+'.txt', \
-                    np.vstack((wav_v,stokes_SV[S-1],var_SV[S-1],stokes_sv[S-1],err_sv[S-1],   \
+                    np.vstack((wav_v,stokes_SV[S-1,ok_V],var_SV[S-1,ok_V],stokes_sv[S-1],err_sv[S-1],   \
                     dwavleft_v,dwavright_v)).T, fmt = "%10.4f")
                 if ((connect != 'hist') & (not errorbars)):
                     if (bintype=='unbin'): marker = 'none'
@@ -298,12 +323,17 @@ def specpolview(infile_list, **kwargs):
                         linewidth=0.,elinewidth=lwdefault,capsize=0)         
                 if ((connect == 'hist') | errorbars):               # plot horizontal bars in histogram   
                     plot_S[S].errorbar(wav_v,stokes_sv[S-1],xerr=(dwavleft_v,dwavright_v),  \
-                        color=plotcolor,marker='None',linewidth=0.,elinewidth=lwdefault,capsize=0)                                                  
+                        color=plotcolor,marker='None',linewidth=0.,elinewidth=lwdefault,capsize=0) 
+                if overlay:
+                    plot_S[S].plot(wav_o,overlay_po[S-1],linestyle='dashed',color='red')                                                 
 
       # Printing for observation
         textfile = sys.stdout
-        if savetext: 
-            textfile = open(name+'_'+bin+'.txt','ab')
+        if savetext:
+            if name.count(obsdate.replace('-','')):
+                textfile = open(name+'_'+bin+'.txt','ab')
+            else:             
+                textfile = open(obsdate.replace('-','')+'_'+name+'_'+bin+'.txt','ab')         
             textfile.truncate(0)
         else: print >>textfile
 
@@ -323,6 +353,7 @@ def specpolview(infile_list, **kwargs):
         else:         
             printstokes(stokes_SV[:,ok_V],var_SV[:stokess,ok_V],wav_v,         \
                 tcenter=tcenter,textfile=textfile,isfluxed=isfluxed)
+        textfile.close
 
   # Plotting of stacked observations
     if saveplot:
@@ -332,31 +363,39 @@ def specpolview(infile_list, **kwargs):
                 plot_S[1].set_ylim(bottom=0)            # linear polarization % plot default baseline 0
                 ymin,ymax = plot_S[2].set_ylim()        # linear polarization PA plot default 5 degree pad
                 plot_S[2].set_ylim(bottom=min(ymin,(ymin+ymax)/2.-5.),top=max(ymax,(ymin+ymax)/2.+5.))
-        if len(yxlimlisti)>0:
-            for (i,ys) in enumerate(yxlimlisti):
+        if len(yxlimList)>0:
+            for (i,ys) in enumerate(yxlimList):
                 if (i>3): continue
                 S = stokess-i/2-1
                 if (ismanlim_i[i] & ((i % 2)==0)): plot_S[S].set_ylim(bottom=float(ys))
                 if (ismanlim_i[i] & ((i % 2)==1)): plot_S[S].set_ylim(top=float(ys))
-        if len(yxlimlisti)>4:
-            if (ismanlim_i[4]): plot_S[S].set_xlim(left=float(yxlimlisti[4]))            
-            if (ismanlim_i[5]): plot_S[S].set_xlim(right=float(yxlimlisti[5]))    
+        if len(yxlimList)>4:
+            if (ismanlim_i[4]): plot_S[S].set_xlim(left=float(yxlimList[4]))            
+            if (ismanlim_i[5]): plot_S[S].set_xlim(right=float(yxlimList[5]))    
 
-        if obss>1: 
+        if (obss==1):
+            plot_S[0].set_title(name+"   "+obsdate)
+        elif (obss < 9): 
             plot_S[0].legend(fontsize='x-small',loc='upper left')
         else: 
-            plot_S[0].set_title(name+"   "+obsdate) 
+            plot_S[0].set_title(name.split("_")[0]+"  "+str(obss)+" observations")
+
         tags = name.count("_")
         cyclelist = []
         if tags:                 # raw and final stokes files
             objlist = sorted(list(set(namelist[b].split("_")[0] for b in range(obss))))
             confcyclelist = sorted(list(set(namelist[b].replace("_stokes","").split("_",1)[-1] for b in range(obss))))
+            confcyclesetlist = map(set,zip(*[x.split('_') for x in confcyclelist])) # combined repeated parts                      
+            confcyclelist = ['_'.join(sorted(list(x))) for x in confcyclesetlist]
             plotfile = '_'.join(objlist+confcyclelist+list([plotname,bin,plottype]))+'.pdf'
         else:                               # diffsum files from diffsum
             plotfile = namelist[0]+'-'+namelist[-1][-4:]+'.pdf'
         plt.savefig(plotfile,orientation='portrait')
-        if os.name=='posix':
+        
+        if ((os.name=='posix')&(inspect.stack()[0][1]==inspect.stack()[1][1])):     # plot from unix cmd line
             if os.popen('ps -C evince -f').read().count(plotfile)==0: os.system('evince '+plotfile+' &')
+            
+        plt.close('all')
     else: 
         plt.show(block=True)
     return
@@ -483,11 +522,11 @@ def printstokes(stokes_Sw,var_Sw,wav_w,textfile=sys.stdout,tcenter=np.pi/2.,isfl
     wav_W = wav_w[ok_w]
 
     if (stokes_Sw[0][ok_w].mean()==1.):                    
-        fmt = "   %8.2f "+2*(stokess-1)*(' %8.4f')
+        fmt = "  %8.2f "+2*(stokess-1)*(' %8.4f')
         label = '\n   Wavelen     '+(6*" ").join(stokeslist)+(5*" ")+" Err  ".join(stokeslist)+' Err '
         output_vW = np.vstack((wav_W,100.*stokes_sW,100.*err_sW))
     else:
-        fmt = "   %8.2f "+["%11.2f ","%11.3e "][isfluxed]+2*(stokess-1)*(' %8.4f')
+        fmt = "  %8.2f "+["%11.2f ","%11.3e "][isfluxed]+2*(stokess-1)*(' %8.4f')
         label = '\n   Wavelen    '+["Intensity"," Flambda "][isfluxed]+'   '+(6*" ").\
             join(stokeslist)+(5*" ")+" Err  ".join(stokeslist)+' Err '
         output_vW = np.vstack((wav_W,stokes_Sw[0,ok_w],100.*stokes_sW,100.*err_sW))
@@ -495,7 +534,7 @@ def printstokes(stokes_Sw,var_Sw,wav_w,textfile=sys.stdout,tcenter=np.pi/2.,isfl
     if stokess>2:                                   # Q,U, or Q,U,V - add P,T output                  
         stokes_vw, err_vw = viewstokes(stokes_Sw,var_Sw,ok_w,tcenter)
         output_vW = np.vstack((output_vW,stokes_vw[:,ok_w],err_vw[:,ok_w]))
-        fmt += (' '+2*('%8.4f %8.3f'))
+        fmt += (2*(' %8.4f %8.3f'))
         ptstokeslist = ['% P','PA ']
         label += ('   '+(6*" ").join(ptstokeslist)+(4*" ")+" Err  ".join(ptstokeslist)+' Err ')
 

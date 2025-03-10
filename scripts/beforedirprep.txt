@@ -1,0 +1,2 @@
+This goes in line 2 of reducepoldata_sc.py, script.py
+print "Run toolprep first";exit()   # replaced with poldir text by toolprep.py

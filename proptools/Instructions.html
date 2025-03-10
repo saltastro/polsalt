@@ -1,0 +1,143 @@
+<html>
+
+<head>
+<meta name="generator" content="WordPerfect">
+<meta http-equiv="content-Type" content="text/html; charset=utf-8">
+<title>untitled</title>
+
+<style type="text/css">
+p
+{
+	margin-top: 0px;
+	margin-bottom: 1px
+}
+
+body
+{
+	font-family: "Times New Roman", serif;
+	font-weight: normal;
+	font-style: normal
+}
+</style>
+
+</head>
+
+<body>
+<p><span style="font-size: 100%"><span style="color: #0055ff"><span style="text-decoration: underline"><span style="font-weight: bold"><span style="font-size: 133%">pySlitMask:</span></span></span></span></span></p>
+<br>
+<p><span style="font-size: 111%">This is a quick start guide to design a MOS mask for the RSS on SALT. This tool was designed to be used with a
+catalogue of target objects which is created before using the tool. The tool makes use of a priority based optimization
+-  this should be kept in mind when creating the input catalogue.  The optimization allows adjustment of the mask
+center and PA, and allows the slits to be slid perpendicular to the dispersion to avoid collision of the slit ends.</span></p>
+<br>
+<p><span style="text-decoration: underline"><span style="font-weight: bold"><span style="font-size: 111%">Preparation:</span></span></span></p>
+<br>
+<p><span style="font-size: 111%">1. Check the range of allowed position angles for the field:</span></p>
+<br>
+<p><i><span style="font-size: 111%">http://www.salt.ac.za/fileadmin/files/observing/documents/SALT_PA_Visibility.pdf</span></i></p>
+<br>
+<p><span style="font-size: 111%">2. Prepare an input catalogue of target objects</span> with accurate astrometry</p>
+<br>
+<p><span style="font-size: 111%">&#160;The input catalogue should be an ascii file with the following formatting:</span></p>
+<br>
+<p><span style="font-weight: bold"><i><span style="font-size: 111%">id RA(deg) DEC(deg) epoch magnitude band priority width(arcsec) length(arcsec) tilt(deg)</span></i></span></p>
+<br>
+<p><span style="font-size: 111%">The priority should have the following values:</span></p>
+<br>
+<p><span style="font-size: 111%">&#160;1 Objects that are of highest priority</span><span style="font-size: 111%"></span></p>
+<br>
+<p><span style="font-size: 111%">&#160;&gt;0 and &lt;1 Optional objects with increasing priority for the mask</span><span style="font-size: 111%"></span></p>
+<br>
+<p><span style="font-size: 111%">&#160;0 Objects to be avoided (e.g. very bright stars).  They will be required to be the minimum gap away from any slit in
+the mask.</span></p>
+<br>
+<p><span style="font-size: 111%">&#160;-1 Alignment star</span><span style="font-size: 111%"></span></p>
+<br>
+<p><span style="font-size: 111%">We currently suggest a minimum slit width of 1.5" and a minimum slit length of 8". </span> Tilt should be 0 for regular grating
+spectroscopy and 90 for imaging spectropolarimetry.  Other tilts are not yet supported.</p>
+<br>
+<p><span style="font-size: 100%">3. Get a 10x10 arcmin fits DSS image to work from, for instance, in your browser:</span></p>
+<br>
+<p><span style="font-size: 100%">http://archive.stsci.edu/cgi-bin/dss_search?v=poss2ukstu_red&amp;r=&lt;rr.rrrrrr&gt;&amp;d=&lt;dd.dddddd&gt;&amp;e=J2000&amp;h=10.0&amp;w=10.0&amp;f=fits&amp;c=none</span></p>
+<br>
+<p><span style="font-size: 100%">where rr.rrrrrr and dd.dddddd are the RA and Dec in degrees for your field.  Save as, e.g., target_DSS.fits.</span></p>
+<br>
+
+<br>
+<p><span style="text-decoration: underline"><span style="font-weight: bold"><span style="font-size: 111%">Step 1: Fill in Mask Details</span></span></span></p>
+<br>
+<p><span style="font-size: 111%">. Fill in the Target and Mask name on the main window as well as the Mask Info and RSS Setup  on the Info tab.</span></p>
+<br>
+<p><span style="text-decoration: underline"><span style="font-weight: bold"><span style="font-size: 111%">Step 2: Load Image and Catalogue</span></span></span></p>
+<br>
+<p><span style="font-size: 111%">. Load the input catalogue of target objects. </span><i><span style="font-size: 111%">File -&gt; Load Catalogue</span></i></p>
+<br>
+<p><span style="font-size: 111%">. Update the Coordinates of the default Mask Centre.</span></p>
+<br>
+<p><span style="font-size: 111%">. Choose default Position Angle.</span></p>
+<br>
+<p><span style="font-size: 111%">. Load the DSS image of the field. </span><i><span style="font-size: 111%">File -&gt; Load Image</span></i><span style="font-size: 111%"></span></p>
+<br>
+<p><span style="font-size: 111%">Upon loading the catalogue into the tool, the default Coordinates of the Mask Centre are populated with the mean
+RA and DEC values from the catalogue.  The Catalog tab will show which objects are in the FoV, and "In Mask" is
+set to zero for priority 0 objects.  The slit extent on each side of the object is shown in Length1 and Length2, which
+are initialized to length/2.  The Slits tab will show collision overlap data for all science objects currently in the mask,
+and will identify which objects are colliding.  The Refstars tab shows similar information for the reference stars.</span></p>
+<br>
+<p><span style="font-size: 111%"><span style="font-weight: bold">Note: none of the "load", "edit" or "import" options on the Catalogue, Slits, and Refstars tabs are currently
+supported.  For now, we recommend changing input by updating and reloading the catalog file.</span></span></p>
+<br>
+<p><span style="text-decoration: underline"><span style="font-weight: bold"><span style="font-size: 111%">Step 3: Optimize the Mask</span></span></span></p>
+<br>
+<p><span style="font-size: 111%">. Go to the Optimize tab</span></p>
+<br>
+<p><span style="font-size: 111%">. Set the cross-dispersion minimum gap in arseconds (default is 1''), the maximum allowed cross-dispersion shift
+(default 25% of the slit length), and the maximum spectrum loss in the dispersion direction (default 5%).</span></p>
+<br>
+<p><span style="font-size: 111%">. Set the search grid for the mask position/ PA optimization (position in arcsec, PA in degrees).  Use an odd number
+of grid points, so that the search is symmetric about the default position.  If all grid counts are left at 1, the
+optimization will just allow for slit shifts above, and cull all unacceptable collisions at that mask position.</span></p>
+<br>
+<p><span style="font-size: 111%">. Hit "Optimize"</span></p>
+<br>
+<p><span style="font-size: 111%">The optimizer runs on all the target objects that lie within the RSS FoV. For each mask position at a particular PA,
+the optimizer will try and place as many shifted slits on objects as possible while taking the priority into account. 
+Objects with unacceptable collision are removed from the current mask in order of priority, with ref stars having a
+lower priority than priority 1 objects, but higher than the others.  If fewer than 3 ref stars are left, the mask position is
+deemed unacceptable.  For each position, the slit (box) and spectrum (dashed line) positions are shown on the DSS
+image, labeled by the slit catidx. For grid searches, the best position at a PA is found, based on with the most number
+of P1&#8217;s, then the most total science targets, then the most reference stars</span><span style="font-size: 111%">, then the smallest remaining total collisions,
+then the smallest total slit shift. Finally, the best PA is shown, based on a comparison of the best position at each PA.
+"Start" shows accepted objects with their remaining collisions for the default mask, and "Best" shows the best mask in
+the grid.  A printout lists all acceptable grid positions.  Hitting "Adopt it" changes the mask default to the best, which
+may then be finalized.  Objects to be in the mask can be inspected in the Slit table. Reference/ alignment stars can be
+inspected in the Refstars tab. The catalog priorities may then be adjusted as desired, and the procedure repeated until
+a suitable mask is obtained.</span></p>
+<br>
+<p><span style="font-size: 111%"><span style="text-decoration: underline"><span style="font-weight: bold">Step 4: Validate the Mask</span></span></span></p>
+<br>
+<p><span style="font-size: 111%">. Go to the Finalize tab.</span></p>
+<br>
+<p><span style="font-size: 111%">To be able to write the final .rsmt file required by the PIPT, the mask needs to be validated. The Validate button will
+go through and check whether all the relevant information has been filled in and will produce errors and warnings.
+Masks cannot be written to file when errors have been encountered. Note that the Validator does not check the
+Position Angle information.</span></p>
+<br>
+<p><span style="font-size: 111%"><span style="text-decoration: underline"><span style="font-weight: bold">Step 5: Write .rsmt file</span></span></span></p>
+<br>
+<p><span style="font-size: 111%">When the mask has been successfully validated, the mask can be written to file. Hit the <i>Write .rsmt file</i> button. If the
+mask was not validated an error message will appear. </span></p>
+<br>
+<p><span style="font-size: 111%"><span style="font-weight: bold"><span style="text-decoration: underline">Step 6: Create Finder chart</span></span></span></p>
+<br>
+<p><span style="font-size: 111%">Create a finder chart for the mask, either from the current image, or from a different DSS image, if a different contrast
+or bandpass is needed for best visibility.</span></p>
+<br>
+<p><span style="font-size: 111%"><span style="text-decoration: underline"><span style="font-weight: bold">Notes:</span></span></span></p>
+<br>
+<p><span style="font-size: 111%">. Greyed out text and check boxes are space holders for future features.</span></p>
+<br>
+<p><span style="font-size: 100%"><i>For queries please email: </i></span><a href="https://sciencewiki.salt.ac.za/index.php/PySlitMask_Tutorial "><span style="font-size: 100%"><span style="color: #0000ff"><span style="text-decoration: underline"><span style="font-size: 122%">sa@salt.ac.za</span></span></span></span></a><span style="font-size: 100%"><span style="color: #000000"></span></span></p>
+</body>
+
+</html>

@@ -113,15 +113,16 @@ def specpolcorrect_sc(infileList,**kwargs):
     return
 
 def specpolspectrum_sc(infileList,**kwargs):
-    print '\nspecpolspectrum_sc version: 20191123'
+    print '\nspecpolspectrum_sc version: 20210302'
     logfile = kwargs.pop('logfile','salt.log')
     locatewindow = kwargs.pop('locate',(-120.,120.))    # arcsec relative to optical axis
     xtrwindow = kwargs.pop('extract',10.)               # arcsec relative to located spectrum               
                                                         # optional list t1,t2,lb1,lb2,rb1,rb2; default t2-t1
     docomp = kwargs.pop('docomp',False)                 # comp locate window is inverse of locate window
+    dolamp = kwargs.pop('dolamp',False)                 # reduce lamp data   
 
     log = open(logfile,'a')
-    print >> log, '\nspecpolspectrum_sc version: 20191123' 
+    print >> log, '\nspecpolspectrum_sc version: 20210302' 
 
   # group the files together
     confitemlist = ['GRATING','GR-ANGLE','CAMANG','BVISITID']
@@ -180,7 +181,7 @@ def specpolspectrum_sc(infileList,**kwargs):
       # process images
         for i,img in enumerate(fileListj):
             hdul = pyfits.open(img)
-            if hdul[0].header['LAMPID'].strip() != 'NONE': continue
+            if ((not dolamp) & (hdul[0].header['LAMPID'].strip() != 'NONE')): continue
             sci_orc = hdul['SCI'].data
             rows, cols = sci_orc[0].shape
             cbin, rbin = [int(x) for x in hdul[0].header['CCDSUM'].split(" ")]
@@ -223,7 +224,8 @@ def specpolspectrum_sc(infileList,**kwargs):
             o = 0
             xtrrow_sd = xtrrow_osd[o]
             data = hdul['SCI'].data[o]/gaincor_c[None,:]
-            var = hdul['VAR'].data[o]/gaincor_c[None,:]**2
+#            var = hdul['VAR'].data[o]/gaincor_c[None,:]**2 before 20210302
+            var = hdul['VAR'].data[o]/gaincor_c[None,:]
             bpm = hdul['BPM'].data[o]
             wave = wave_orc[o]
 
@@ -232,7 +234,8 @@ def specpolspectrum_sc(infileList,**kwargs):
             o = 1
             xtrrow_sd = xtrrow_osd[o]
             data = hdul['SCI'].data[o]/gaincor_c[None,:]
-            var = hdul['VAR'].data[o]/gaincor_c[None,:]**2
+#            var = hdul['VAR'].data[o]/gaincor_c[None,:]**2 before 20210302
+            var = hdul['VAR'].data[o]/gaincor_c[None,:]            
             bpm = hdul['BPM'].data[o]
             wave = wave_orc[o]
 

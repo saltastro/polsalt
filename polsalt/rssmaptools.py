@@ -1,36 +1,104 @@
 
 # mapping tools, including:
 
+# configmap(infilelist,confitemlist,debug='False')
 # sextract(fits,sigma=5.,deblend=.005,minpix=10,fwhmlo=0.6,fwhmhi=1.5,cull=False,logfile='salt.log',debug=False)
+# readmaskxml(xmlfile) 
+# readmaskgcode(gcodefile) 
 # catid(yxcat_dt, yxcand_ds, offsettol=10., errtol=4.,debug=False,logfile='salt.log',name='')
 # ccdcenter(image_rc)
 # gaincor(hdu)
 # YXcalc(ra_t,dec_t,RAd,DECd,PAd,fps)
-# RSScoldistort(yx_ds,wav_s,coltem,distTab=[],debug=False)
-# RSScamdistort(alfyx_ds,wav_s,camtem,distTab=[],debug=False)
-# RSSpolsplit(alfyx_ds,wav_s,distTab=[],EOratTab=[],debug=False)
-# RRSScolpolcam(YX_ds, wav_s, coltem, camtem, yxOEoff_d=np.zeros(2))
-# RSSpolgeom(hdul,wavl,yxOEoff_d=np.zeros(2))
 # impolguide(YX_dt,yx_dpt,yxOEoff_d,wavl,coltem,camtem,debug=False,name='')
 # Tableinterp(Tab,interpkey,interp_x)
 # rotate2d(yx_ds, rot, center=np.zeros(2))
 # boxsmooth1d(ar_x,ok_x,xbox,blklim)
 # blksmooth2d(ar_rc,ok_rc,rblk,cblk,blklim,mode="mean",debug=False)
 # fence(arr)
+# polyfit_cull(x_x,y_x,ok_x,deg,fence='outer')
+# fracmax(arr,frac=0.5)
 # printstdlog(string,logfile)
 
 import os, sys, glob, copy, shutil, inspect
 
 import numpy as np
+from xml.dom import minidom
 from scipy import linalg as la
-from specpolutils import rssdtralign, datedfile
+from specpolutils import rssdtralign, datedfile, datedline
 from scipy.interpolate import interp1d, griddata
 from astropy.io import fits as pyfits
 from astropy.io import ascii
+from saltobslog import obslog
+from astropy.table import Table,unique
 import astropy.table as ta
 
 datadir = os.path.dirname(__file__) + '/data/'
+# ----------------------------------------------------------
+def configmap(infilelist,confitemlist,debug=False):
+    """general purpose mapper of observing configurations
+    Does proper elimination of non-polarimetric images
 
+    Parameters
+    ----------
+    infilelist: list
+        List of filenames 
+    confitemlist: list
+        List of header keywords which define a configuration
+
+    Returns
+    -------
+    obs_i: numpy 1d array
+        observation number (unique object, config) for each file, -1=ignore
+    config_i: numpy 1d array
+        config number (unique config) for each fil, -1 = ignore
+    obstab: astropy Table
+        object name and config number for each observation     
+    configtab: astropy Table
+        config items for each config
+     
+    """
+    if debug: print "debug configmap infilelist: ",infilelist
+        
+  # create the observation log      
+    obsdict = obslog(infilelist)
+    images = len(infilelist)
+
+  # make table of unique polarimetric configurations
+    ispol_i = np.array([(obsdict['BS-STATE'][i][-8:] == 'Inserted') for i in range(images)])    
+    config_i = -np.ones(images,dtype=int)
+    confdatListj = []
+    for i in np.where(ispol_i)[0]:
+        confdatList = []
+        for item in confitemlist:
+            confdatList.append(obsdict[item][i])
+        confdatListj.append(confdatList)
+
+    dtypeList = map(type,confdatListj[0])
+    dtypeList = ['S32' if t is str else t for t in dtypeList]   # for table comparisons               
+    configTab = Table(np.array(confdatListj),names=confitemlist,dtype=dtypeList)
+    configTab = unique(configTab)
+    
+    for j,i in enumerate(np.where(ispol_i)[0]):
+        configRow = Table(np.array(confdatListj[j]),names=confitemlist,dtype=dtypeList)                    
+        config_i[i] = np.where(configTab==configRow)[0][0]
+                        
+  # make table of unique observations
+    obs_i = -np.ones(images,dtype=int)  
+    obsdatListj = []
+    for i in np.where(ispol_i)[0]:
+        object = obsdict['OBJECT'][i].replace(' ','')
+        obsdatListj.append([object, config_i[i]])
+
+    dtypeList = map(type,obsdatListj[0])
+    dtypeList = ['S32' if t is str else t for t in dtypeList]    
+    obsTab = Table(np.array(obsdatListj),names=['object','config'],dtype=dtypeList)
+    obsTab = unique(obsTab)
+    
+    for j,i in enumerate(np.where(ispol_i)[0]):
+        obsRow = Table(np.array(obsdatListj[j]),names=['object','config'],dtype=dtypeList)                     
+        obs_i[i] = np.where(obsTab==obsRow)[0][0]
+                        
+    return obs_i,config_i,obsTab,configTab
 # ---------------------------------------------------------------------------------
 
 def sextract(fits,sigma=5.,deblend=.005,minpix=10,fwhmlo=0.6,fwhmhi=1.5,cull=False,logfile='salt.log',debug=False):
@@ -40,7 +108,7 @@ def sextract(fits,sigma=5.,deblend=.005,minpix=10,fwhmlo=0.6,fwhmhi=1.5,cull=Fal
 
     hdulist_image = pyfits.open(fits)
     shape_d = np.asarray(hdulist_image["SCI"].data.shape)
-    rcbin_d = np.array(hdulist_image[0].header["CCDSUM"].split(" ")).astype(int)
+    rcbin_d = np.array(hdulist_image[0].header["CCDSUM"].split(" ")).astype(int)[::-1]
     image_rc = np.copy(hdulist_image["SCI"].data)                   
     pix_scale=0.125
     r_ap=2.0/(pix_scale*rcbin_d.min())         
@@ -107,6 +175,64 @@ def sextract(fits,sigma=5.,deblend=.005,minpix=10,fwhmlo=0.6,fwhmhi=1.5,cull=Fal
     os.remove("out.txt")
     if cull: return sextabcull, sextab
     else: return sextab
+# ------------------------------------
+def readmaskxml(xmlfile):
+    """Read the slit information in from an xml file
+       that was used to create the slitmask
+    """
+
+    # read in the xml
+    dom = minidom.parse(xmlfile)
+    
+    # read all the parameters into a dictionary
+    parameters = dom.getElementsByTagName('parameter')
+    Param = {}
+    for param in parameters:
+        Param[str(param.getAttribute('name'))] = str(param.getAttribute('value'))
+
+    PA = float(Param['ROTANGLE'])
+    CENTERRA = float(Param['CENTERRA'])
+    CENTERDEC = float(Param['CENTERDEC'])
+
+    # read all the slits into a table
+    slitTab = Table(names=('TYPE','CATID','RACE','DECCE','WIDTH','LENGTH'),     \
+        dtype=('S7','<S64', float, float, float, float))
+    targets = dom.getElementsByTagName('slit')
+    refs = dom.getElementsByTagName('refstar')    
+    for slit in targets:
+        slitTab.add_row(('target',str(slit.getAttribute('id')),
+            float(slit.getAttribute('xce')),float(slit.getAttribute('yce')),
+            float(slit.getAttribute('width')),float(slit.getAttribute('length'))))
+    for slit in refs:
+        slitTab.add_row(('refstar',str(slit.getAttribute('id')),
+            float(slit.getAttribute('xce')),float(slit.getAttribute('yce')),
+            float(slit.getAttribute('width')),float(slit.getAttribute('length'))))            
+        
+    return slitTab, PA, CENTERRA, CENTERDEC
+
+# ------------------------------------
+def readmaskgcode(gcodefile):
+    """Read the slit information in from a gcode file
+       that was used to create the slitmask
+    """
+    # read in the gcode text
+    lineList = open(gcodefile,'r').readlines()
+
+    # read all the slits into a table
+    slitTab = Table(names=('CATID','XCE','YCE','XLEN','YLEN'),     \
+        dtype=('<S64', float, float, float, float))
+
+    slitstart_s = np.where(np.array(lineList)=="(Start drawing a slit)\n")[0]
+    lineparamList = [line[:3] for line in lineList]  
+    for s,st in enumerate(slitstart_s):
+        slitTab.add_row((s,
+            float(lineList[st+lineparamList[st:].index('#1=')][3:-1]),
+            float(lineList[st+lineparamList[st:].index('#2=')][3:-1]),            
+            float(lineList[st+lineparamList[st:].index('#3=')][3:-1]),
+            float(lineList[st+lineparamList[st:].index('#4=')][3:-1])))
+                                
+    return slitTab
+      
 # ------------------------------------
 def catid(yxcat_dt, yxcand_ds, offsettol=10., errtol=4.,debug=False,logfile='salt.log',name=''):
     """identify candidate positions in a catalog prediction, using 2D histogram of offset vectors
@@ -202,8 +328,8 @@ def ccdcenter(image_rc):
     for i in (0,1,2):
         cedge_id[i,0] = np.argmax((image_c[cstart: ] != 0)&(image_c[cstart: ] != -1)) + cstart
         cedge_id[i,1] = np.argmax((image_c[cedge_id[i,0]: ] == 0)|  \
-                                  (image_c[cedge_id[i,0]: ] == -1)) + cedge_id[i,0] - 1
-        if cedge_id[i,1] == cedge_id[i,0]-1: cedge_id[i,1] = cols-1
+                                  (image_c[cedge_id[i,0]: ] == -1)) + cedge_id[i,0] - 1                                  
+        if cedge_id[i,1] == cedge_id[i,0]-1: cedge_id[i,1] = cols-1         
         cstart = cedge_id[i,1]+1
     rccenter_d = np.array([rows/2,cedge_id[1].mean()])
     return rccenter_d,cedge_id.flatten()[1:5]
@@ -262,216 +388,6 @@ def YXcalc(ra_t,dec_t,RAd,DECd,PAd,fps):
             (dec_t-DECd)*np.sin(PAr))
     return np.array([Y_t,X_t])
 
-# ------------------------------------
-def RSScoldistort(YX_ds,wav_s,coltem,distTab=[],debug=False):
-    """apply collimator distortion to array of Y,X coordinates
-
-    Parameters:
-    YX_ds: 2d numarray input coordinates (mm, SALT focal plane)
-        _d: 0,1 for Y,X
-        _s: index of inputs
-    wav_s: 1d numarray (or float, if all the same) wavelength (Ang)
-    disttab: astropy Table of distortion model parameters, vs wavelength
-
-    Returns: alfyx_ds (degrees) angles in collimated space
-
-    """
-    stars = YX_ds.shape[1]
-    if np.isscalar(wav_s): wav_s = np.repeat(wav_s,stars)
-
-    imgoptfile = datadir+'RSSimgopt.txt'
-    if len(distTab)==0:
-        distTab = ascii.read(imgoptfile,data_start=1,   \
-            names=['Wavel','Fcoll','Acoll','Bcoll','ydcoll','xdcoll','Fcam','acam','alfydcam','alfxdcam'])
-    dFcoldt,dFcamdt = ascii.read(imgoptfile,data_end=1)[0]
-    sdistTab = Tableinterp(distTab,'Wavel',wav_s)
-    Fcam,Fcoll = Tableinterp(distTab,'Wavel',5500.)['Fcam','Fcoll'][0]
-
-    YXdcoll_ds = np.array([sdistTab['ydcoll'],sdistTab['xdcoll']])* Fcoll/Fcam
-
-  # correct for collimator distortion
-    Rd_s = np.sqrt(((YX_ds - YXdcoll_ds)**2).sum(axis=0))/50.
-    dist_s = (1. + sdistTab['Acoll']*Rd_s**2 + sdistTab['Bcoll']*Rd_s**4)
-    YXd_ds = YXdcoll_ds + dist_s*(YX_ds - YXdcoll_ds)
-    alfyx_ds = np.degrees(YXd_ds/(sdistTab['Fcoll'] + dFcoldt*(coltem - 7.5)))
-
-    if debug: np.savetxt("coldist.txt",np.vstack((wav_s,YX_ds,dist_s,YXd_ds,alfyx_ds)).T,  \
-        fmt=3*"%7.2f "+"%10.4f "+2*"%7.2f "+2*"%9.4f ")
-
-    return alfyx_ds
-
-# ------------------------------------
-def RSScamdistort(alfyx_ds,wav_s,camtem,distTab=[],debug=False):
-    """apply camera distortion to array of y,x ray angles
-
-    Parameters:
-    alfyx_ds: 2d numarray input coordinates (deg)
-        _d: 0,1 for y,x
-        _s: index of inputs
-    wav_s: 1d numarray (or float, if all the same) wavelength (Ang)
-    disttab: astropy Table of distortion model parameters, vs wavelength
-
-    Returns: yx_ds (mm) at the detector
-
-    """
-    stars = alfyx_ds.shape[1]
-    if np.isscalar(wav_s): wav_s = np.repeat(wav_s,stars)
-
-    imgoptfile = datadir+'RSSimgopt.txt'
-    if len(distTab)==0:
-        distTab = ascii.read(imgoptfile,data_start=1,   \
-            names=['Wavel','Fcoll','Acoll','Bcoll','ydcoll','xdcoll','Fcam','acam','alfydcam','alfxdcam'])
-    dFcoldt,dFcamdt = ascii.read(imgoptfile,data_end=1)[0]       
-    sdistTab = Tableinterp(distTab,'Wavel',wav_s)
-
-    alfyxdcam_ds = np.array([sdistTab['alfydcam'],sdistTab['alfxdcam']])
-
-  # correct for camera distortion 
-    alfrd_s = np.sqrt(((alfyx_ds - alfyxdcam_ds)**2).sum(axis=0))/5.
-    dist_s = (1. + sdistTab['acam']*alfrd_s**2)
-    alfyxd_ds = alfyxdcam_ds + dist_s*(alfyx_ds - alfyxdcam_ds)
-    yx_ds = (sdistTab['Fcam'] + dFcamdt*(camtem - 7.5))*np.radians(alfyxd_ds)
-
-    if debug: np.savetxt("camdist.txt",np.vstack((wav_s,alfyx_ds,dist_s,alfyxd_ds,yx_ds)).T,  \
-        fmt="%7.2f "+5*"%10.4f "+2*"%7.2f ")
-
-    return yx_ds
-
-# ------------------------------------
-def RSSpolsplit(alfyx_ds,wav_s,mag=.99779,distTab=[],paramTab=[],debug=False):
-    """apply wollaston prism distortion and splitting for beam OE to array of y,x angles
-
-    Parameters:
-    alfyx_ds: 2d numarray input angles (deg), relative to optical axis
-        _d: 0,1 for y,x
-        _s: index of input targets
-    wav_s: float or 1d numarray float
-        wavelength (Ang) for point s.  If not an array, use for all points
-    disttab: astropy Table of distortion model parameters for this beam, vs wavelength
-
-    Returns: w-distorted and deviated alfyx_dps, (_p = 0,1 for O,E), relative to optical axis
-
-    """
-    stars = alfyx_ds.shape[1]
-    if np.isscalar(wav_s): wav_s = np.repeat(wav_s,stars)
-
-    poldistfile = datadir+'RSSpoldist.txt'
-    if len(paramTab)==0:
-        paramTab = ascii.read(poldistfile, data_end=1, names=['bsrot','yoff','xoff'])
-        paramTab = ta.hstack([paramTab,ascii.read(poldistfile, data_start=1, data_end=2,   \
-            names=['EOy_0','EOy_Y','EOy_YY','EOy_XX','EOx_0','EOx_X','EOx_XY','EOx_XXX'])])
-    if len(distTab)==0:
-        distTab = ascii.read(poldistfile, data_start=2,   \
-            names = ['Wavel','y_0','y_Y','y_YY','y_XX','x_0','x_X','x_XY','x_XXX'])	
-
-    sdistTab = Tableinterp(distTab,'Wavel',wav_s)
-
-    alfyxout_dps = np.zeros((2,2,stars))
-    bsrot, yoff, xoff = paramTab['bsrot','yoff','xoff'][0]
-    for p in (0,1):
-      # rotate about alf=0,0 into prism ref, apply distortion, rotate back out
-        alfyxin_ds = mag*rotate2d(alfyx_ds,-bsrot)
-        alfyout_s = yoff + sdistTab['y_0'] + sdistTab['y_Y']*alfyxin_ds[0] +     \
-            0.001*sdistTab['y_YY']*alfyxin_ds[0]**2 + 0.001*sdistTab['y_XX']*alfyxin_ds[1]**2
-        alfxout_s = xoff + sdistTab['x_0'] + sdistTab['x_X']*alfyxin_ds[1] +     \
-            0.001*sdistTab['x_XY']*alfyxin_ds[1]*alfyxin_ds[0] + 0.001*sdistTab['x_XXX']*alfyxin_ds[1]**3
-        alfyxout_dps[:,p] = rotate2d(np.array([alfyout_s,alfxout_s]),bsrot)
-                                            # second pass is E, name[2:] strips off the 'EO'        
-        for name in paramTab.colnames[3:]: sdistTab[name[2:]] *= paramTab[name]
-
-    return alfyxout_dps
-
-# ---------------------------------------------------------------------------------
-def RSScolpolcam(YX_ds, wav_s, coltem, camtem, yxOEoff_d=np.zeros(2)):
-  # complete RSS distortion for polarimetric data
-
-    alfyxo_ds = RSScoldistort(YX_ds,wav_s,coltem)
-    alfyxow_dps = RSSpolsplit(alfyxo_ds,wav_s)
-    if np.isscalar(wav_s):
-        wav_S = wav_s
-    else:
-        wav_S = np.tile(wav_s,2)  
-    yxowa_dps = RSScamdistort(alfyxow_dps.reshape((2,-1)),wav_S,camtem).reshape((2,2,-1))
-    yxowa_dps += (np.array([[-.5,.5],[-.5,.5]])*yxOEoff_d[:,None])[:,:,None]
-
-    return yxowa_dps
-
-# ------------------------------------
-def RSSpolgeom(hdul,wavl,yxOEoff_d=np.zeros(2)):
-    """Return imaging polarimetric layout 
-
-    Parameters 
-    ----------
-    hdul: HDU list for relavant image
-    wavl: float, wavelength (Ang)
-    yxOEoff_d: 1D float numpy array, optional y,x offset to RSScolpolcam nominal E-O
-
-    Returns 
-    ----------
-    yx0_dp: 2D float numpy array, [[y0_O,x0_O],[y0_E,x0_E]].  
-        mm position of O,E optic axes at this wavelength relative to imaging optic axis 
-    rshift: int, row of OE FOV split point - imaging CCD center row (5000 Ang)
-    yxp0_dp: 2D float numpy array, 
-        mm position of center of split O,E images relative to O,E optic axes at this wavelength 
-    isfov_rc: 2D boolean numpy array, (full image) true inside FOV for O and E
-    """
-
-    data_rc = hdul[1].data
-    rows, cols = data_rc.shape[-2:]      
-    if len(data_rc.shape)>2:                            # allow for pol split data    
-        rows = 2*rows           
-        data_rc = data_rc[0]                
-    cbin, rbin = [int(x) for x in hdul[0].header['CCDSUM'].split(" ")]
-    rcbin_d = np.array([rbin,cbin])
-    rccenter_d, cgapedge_c = ccdcenter(data_rc)
-
-    camtem = hdul[0].header['CAMTEM']
-    coltem = hdul[0].header['COLTEM']
-    dateobs =  hdul[0].header['DATE-OBS'].replace('-','')
-    trkrho = hdul[0].header['TRKRHO']
-    pixmm = 0.015
-
-    ur0,uc0,saltfps = rssdtralign(dateobs,trkrho)       # ur, uc =unbinned pixels, saltfps =micr/arcsec
-    yx0_d = -0.015*np.array([ur0,uc0])                  # mm position of center in imaging from optical axis
-       
-    dyx_dp = np.array([[-.5,.5],[-.5,.5]])*yxOEoff_d[:,None]
-
-    dy = 2.01                                           # pol fov height in arcmin
-    dr = 3.97                                           # pol fov radius in arcmin
-    xcnr = np.sqrt((dr**2-dy**2))
-    YXfov_dt = np.array([[-dy,-dy,-dy,  0.,0.,0.,   dy,dy,dy],   \
-                        [-xcnr,0.,xcnr,-dr,0.,dr,-xcnr,0.,xcnr]])*60.*saltfps/1000.
-    yxfov_dpt = RSScolpolcam(YXfov_dt,wavl,coltem,camtem) + dyx_dp[:,:,None]
-
-    yx0_dp = yxfov_dpt[:,:,4]
-
-    yxfovmean_dpt = RSScolpolcam(YXfov_dt,5000.,coltem,camtem) + dyx_dp[:,:,None]
-    yxsep_d = 0.5*(yxfovmean_dpt[:,0,7] + yxfovmean_dpt[:,1,1])     # beam fov separation point 
-
-    rshift = int(np.trunc((yxsep_d-yx0_d)[0]/(rcbin_d[0]*pixmm)))   # split row offset, same whole obs
-
-    yxp0_dp = yx0_d[:,None] - (yx0_dp +  \
-        rcbin_d[0]*pixmm*np.array([[-rshift+rows/4,-rshift-rows/4],[0.,0.]]))
-
-    rc0_dp = (yx0_dp-yx0_d[:,None])/(rcbin_d[:,None]*pixmm) + rccenter_d[:,None]
-    cfovrad_p = (yxfov_dpt[1,:,5] - yx0_dp[1])/(rcbin_d[1]*pixmm)
-    rfovup0_p = (yxfov_dpt[0,:,7] - yx0_dp[0])/(rcbin_d[0]*pixmm)
-    rfovdn0_p = (yx0_dp[0] - yxfov_dpt[0,:,1])/(rcbin_d[0]*pixmm) 
-    rfovupcv_p = (yxfov_dpt[0,:,8] - yxfov_dpt[0,:,7])/(rcbin_d[0]*pixmm)    
-    rfovdncv_p = (yxfov_dpt[0,:,1] - yxfov_dpt[0,:,2])/(rcbin_d[0]*pixmm)
-    ccnr = yxfov_dpt[1,0,8]/(rcbin_d[1]*pixmm)   
-    dr_pr = np.arange(rows)[None,:] - rc0_dp[0,:][:,None]
-    dc_pc = np.arange(cols)[None,:] - rc0_dp[1,:][:,None]
-    isfov_rc = np.zeros((rows,cols),dtype=bool)
-    for p in (0,1):    
-        isfov_rc |= ((np.sqrt(dr_pr[p,:,None]**2 + dc_pc[p,None,:]**2) < cfovrad_p[p,None,None]) &      \
-          (dr_pr[p,:,None] < (rfovup0_p[p,None,None] + rfovupcv_p[p,None,None]*(dc_pc[p,None,:]/ccnr)**2)) & \
-          (dr_pr[p,:,None] > -(rfovdn0_p[p,None,None] + rfovdncv_p[p,None,None]*(dc_pc[p,None,:]/ccnr)**2)))
-    gapcolList = range(cgapedge_c[0],cgapedge_c[1])+range(cgapedge_c[2],cgapedge_c[3])
-    isfov_rc[:,gapcolList] = False
-
-    return yx0_dp, rshift, yxp0_dp, isfov_rc
-
 # ----------------------------------------------
 def impolguide(YX_dt,yx_dpt,yxOEoff_d,wavl,coltem,camtem,fitOEoff=True,debug=False,name=''):
   # Least squares fit of dY,dX,drot and dyOEoff,dxOEoff of star offset from predicted target position
@@ -525,7 +441,7 @@ def impolguide(YX_dt,yx_dpt,yxOEoff_d,wavl,coltem,camtem,fitOEoff=True,debug=Fal
 def Tableinterp(Tab,interpkey,interp_x):
   # make a new table, interpolated on specified key
 
-    if np.isscalar(interp_x): interp_x = np.array([interp_x,])
+    if np.isscalar(interp_x): interp_x = np.array([interp_x,])    
     names = Tab.colnames
     newTab = ta.Table(np.zeros((interp_x.shape[0],len(names))),names=names)
     newTab[interpkey] = interp_x
@@ -689,6 +605,76 @@ def fence(arr):
     Q1,Q3 = np.percentile(arr,(25.,75.))
     IQ = Q3-Q1
     return Q1-3*IQ, Q1-1.5*IQ, Q3+1.5*IQ, Q3+3*IQ
+
+# ---------------------------------------------------------------------------------
+
+def legfit_cull(x_x,y_x,ok_x,deg,wt=1.,IQcull=3.,debug=False):
+  # do legendre polyfit, culling weighted errors to fence, default outer
+  # cull at most 25% of startvals
+  # x_x should be on -1,1 interval
+  # legfit_d is coefficients high to low (like np polyfit)
+
+    startvals = ok_x.sum()
+
+    if (type(wt) != 'numpy.ndarray'):
+        wt_x = wt*np.ones_like(x_x)       
+    newcull = True
+    chi_x = np.zeros_like(x_x)
+    passes = 0
+    
+    while newcull:
+        passes += 1 
+        fit_d = np.polynomial.legendre.legfit(x_x[ok_x],y_x[ok_x],deg,w=wt_x[ok_x])                
+        chi_x[ok_x] = (y_x - np.polynomial.legendre.legval(x_x,fit_d))[ok_x]*wt_x[ok_x]    
+        Q1,Q3 = np.percentile(chi_x[ok_x],(25.,75.))        
+        fence_f = [Q1 - IQcull*(Q3-Q1), Q3 + IQcull*(Q3-Q1)]
+        cull_x = ((chi_x < fence_f[0]) | (chi_x > fence_f[1]))
+        culls = cull_x.sum()         
+        newcull = ((culls < startvals/4) & (cull_x[ok_x].sum()>0))                        
+        if debug:
+            print passes, newcull
+            print 4*"%10.3f " % tuple(fit_d)
+            print 2*"%10.3f " % tuple(fence_f)
+            for x in range(len(x_x)):
+                print ((3*" %2i"+" %8.4f"+3*" %8.3f") % (x,ok_x[x],cull_x[x],x_x[x],y_x[x],wt_x[x],chi_x[x])) 
+        ok_x = ok_x & np.logical_not(cull_x)  
+                     
+    err_x = y_x - np.polynomial.legendre.legval(x_x,fit_d)
+    stdev = np.std(err_x[ok_x])
+    
+    return fit_d[::-1], ok_x, err_x, stdev, culls, passes
+
+# ---------------------------------------------------------------------------------
+
+def fracmax(arr_x,points=2,ok_x=[True],frac=0.5):
+  # return interpolated positions of fraction of max, left and right.  -1 if not found.
+  # use linear fit to points closest points
+  # optional good-data mask
+    xs = len(arr_x)
+    if (len(ok_x)==1):
+        ok_x = np.ones(xs,dtype=bool)
+    fmax = arr_x[ok_x].max()
+    ximax = np.where(arr_x == fmax)[0][0]
+    belowfrac_x = ((arr_x < frac*fmax) & ok_x)
+    xleft = -1.
+    if belowfrac_x[:ximax].sum():
+        xileft = ximax - np.argmax(belowfrac_x[ximax:0:-1])
+        xList = range(xileft-(points-2),xileft+points)        
+        xList = xList[0] + np.argsort(np.abs(arr_x[xList] - frac*fmax))[:points]
+        if ok_x[xList].all():
+            poly_d = np.polyfit(xList,arr_x[xList],1)
+            xleft = (frac*fmax - poly_d[1])/poly_d[0]       
+        
+    xright = -1.
+    if belowfrac_x[ximax:].sum():
+        xiright = ximax + np.argmax(belowfrac_x[ximax:])
+        xList = range(xiright-(points-2)-1,xiright+points-1)          
+        xList = xList[0] + np.argsort(np.abs(arr_x[xList] - frac*fmax))[:points]        
+        if ok_x[xList].all():
+            poly_d = np.polyfit(xList,arr_x[xList],1)
+            xright = (frac*fmax - poly_d[1])/poly_d[0]
+
+    return xleft, xright
 
 # ---------------------------------------------------------------------------------
 

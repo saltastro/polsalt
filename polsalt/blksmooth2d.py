@@ -3,6 +3,7 @@
 blksmooth2d
 
 General purpose 2d smoothing
+Better: in rssmaptools
 
 """
 

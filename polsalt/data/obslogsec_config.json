@@ -1,0 +1,14 @@
+{
+    "log_list": [
+        ["FILENAME", "32A"],       
+        ["CDELT1", "D"],
+        ["CRVAL1", "D"],
+        ["NAXIS1", "I"],               
+        ["CDELT2", "D"],
+        ["CRVAL2", "D"],
+        ["NAXIS2", "I"], 
+        ["CDELT3", "D"],
+        ["CRVAL3", "D"],
+        ["NAXIS3", "I"]
+    ]
+}

@@ -42,6 +42,9 @@ def specpolwavmap(infilelist, linelistlib="", automethod='Matchlines',
         log.message('specpolwavmap version: 20180804', with_header=False)         
         # group the files together
         config_dict = list_configurations(infilelist, log)
+        if debug:
+            print 'config_dict:'
+            print config_dict
         usesaltlinelist = (len(linelistlib)>0)
         
         for config in config_dict:

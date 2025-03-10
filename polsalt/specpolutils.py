@@ -6,6 +6,7 @@
 # greff(grating,grang,artic,dateobs,wav)
 # rssdtralign(datobs,trkrho)
 # rssmodelwave(grating,grang,artic,trkrho,cbin,cols,datobs)
+# hwcal(calfile,YX_ds,MByx_ds,wav_w)
 # configmap(infilelist,confitemlist,debug='False')
 # image_number(image_name)
 # list_configurations(infilelist, log)
@@ -13,6 +14,8 @@
 # list_configurations_old(infilelist, log)
 # blksmooth1d(ar_x,blk,ok_x)
 # angle_average(ang_d)
+# rotate2d(yx_ds, rot, center=np.zeros(2))
+# fargmax(arr)
 # printstdlog(string,logfile)
 
 import os, sys, glob, shutil, inspect
@@ -192,6 +195,104 @@ def rssmodelwave(grating,grang,artic,trkrho,cbin,cols,datobs):
     return lam_X
 
 # ----------------------------------------------------------
+def hwcal(hwcalfile,YX_dt,Tyx_d,rho,wav_w):
+    """get P and PA (HWPol), Q and U (HWZero) vs wavelength from hw cal file    
+    Parameters
+    ----------
+    hwcalfile: text
+        name of hwcal file to use
+    YX_dt: numpy 2d array
+        _d: Y,X (mm) at RSS FP
+        _t: targets
+    Tyx_d: numpy 1d array
+        _d:TRKY,TRKX (m) from fits header (same for all targets)
+    rho: TRKRHO (deg) from fits header (same for all targets)
+    wav_w: numpy 1d array
+        _w: wavelengths (Ang)
+
+    Returns: numpy 2d arrays:
+    -------
+    hwcal_ptw[0,1]: 2 numpy 2d arrays
+        hwcal polarization stokes fits for each target and wavelength.  =0 where invalid
+    
+    """
+  # input hwcal file data, _p=0,1 are stacked
+    wav_pW = np.loadtxt(hwcalfile,usecols=0).reshape((2,-1))
+    Wavs = wav_pW.shape[1]
+    targets = YX_dt.shape[1]    
+    wavs = wav_w.shape[0]
+    
+    if (Wavs==1):                         # skip this for now 
+        hwcal_ptw = np.zeros(((2,targets,wavs)))
+        ok_tw = np.ones((targets,wavs),dtype=bool)
+        return hwcal_ptw, ok_tw        
+    
+    wav_W = wav_pW[0]
+    hwcal_pcW = np.loadtxt(hwcalfile)[:,1:].reshape((2,Wavs,-1)).transpose((0,2,1))
+    ok_W = (hwcal_pcW[0,0] != 0.)
+    cofs = hwcal_pcW.shape[1]
+    
+    varList = ['Y','X','Ty','Tx','r']   
+    Vars = open(hwcalfile).read().count("#") - 2        
+    hdrlineList = open(hwcalfile).readlines()[1:(Vars+2)]
+    
+    PAoff = np.fromstring(hdrlineList[0][8:],dtype=float,sep=" ")[0]
+    varidx_V = np.zeros(Vars,dtype=int)
+    fntype_V = np.empty(Vars,dtype=str)
+    fn_Vc = np.zeros((Vars,cofs),dtype=int)
+ 
+    for V in range(Vars): 
+        varname,fntype_V[V] = hdrlineList[V+1][1:8].split()
+        varidx_V[V] = varList.index(varname)
+        fn_Vc[V] = np.fromstring(hdrlineList[V+1][8:],dtype=int,sep=" ")
+
+  # HWPol (Wavs>1) hwcal_p at cal wavelength grid for each target
+  # HWZero (Wavs=1) hwcal_p for each target
+
+    YXnorm = 50.
+    ok_t = ((np.sqrt((YX_dt**2).sum(axis=0)) < 1.1*YXnorm) & (np.abs(YX_dt[0]) < 0.55*YXnorm))    
+    var_vt = YX_dt/YXnorm    
+    TYX_d = rotate2d(Tyx_d[:,None],-rho)[:,0]
+
+    var_vt = np.vstack((var_vt,np.repeat(TYX_d,targets).reshape((2,-1)),np.repeat(rho,targets)))
+    
+    term_Vct = np.zeros((Vars,cofs,targets))    
+    for V in range(Vars):
+        var_t = var_vt[varidx_V[V]]
+        if fntype_V[V]=='l':              # legendre polynomials
+            term_ft = np.array([np.ones(targets),var_t,(3.*var_t**2-1.)/2.])
+        elif fntype_V[V]=='s':            # sinusoidal
+            term_ft = np.array([np.ones(targets),np.sin(np.radians(var_t)),np.cos(np.radians(var_t))])
+        term_Vct[V] = term_ft[fn_Vc[V],:]
+            
+    if (Wavs == 1):
+        Wnorm = 3000.
+        W0 = 6500.
+        W_w = (wav_w - W0)/Wnorm
+        x_ds = np.empty((dims,0))
+        for t in range(x_dt.shape[1]):
+            x_ds = np.hstack((x_ds,np.vstack((np.repeat(x_dt[:,t][:,None],  \
+                    wavs,axis=1),W_w.reshape((1,-1))))))  
+
+  # evaluate fit terms, interpolate HWPol to desired wavelengths
+    if (Wavs == 1):
+        a_cs = (x_ds[:,None,:]**pow_dc[:,:,None]).prod(axis=0) 
+        hwcal_ptw = (a_cs[None,:,:,None]*hwcal_pcW[:,:,None,:]).sum(axis=1).reshape((2,targets,wavs))
+        ok_tw = np.repeat(ok_t[:,None],wavs,axis=1)
+    else:
+        a_ct = term_Vct.prod(axis=0)
+        hwcal_ptW = (a_ct[None,:,:,None]*hwcal_pcW[:,:,None,:]).sum(axis=1)            
+        ok_w = (wav_w > (wav_W[ok_W]).min()) & (wav_w < (wav_W[ok_W]).max())
+        ok_tw = (ok_t[:,None] & ok_w[None,:])
+        hwcal_ptw = np.zeros((2,targets,wavs))
+        for p in [0,1]:
+            hwcal_ptw[p,ok_tw] = interp1d(wav_W[ok_W],hwcal_ptW[p,ok_t][:,ok_W], \
+                kind='cubic',bounds_error=False)(wav_w[ok_w]).flatten()                               
+        hwcal_ptw[1,ok_tw] = hwcal_ptw[1,ok_tw] + PAoff
+ 
+    return hwcal_ptw, ok_tw
+ 
+# ----------------------------------------------------------
 def configmap(infilelist,confitemlist,debug='False'):
     """general purpose mapper of observing configurations
 
@@ -218,9 +319,10 @@ def configmap(infilelist,confitemlist,debug='False'):
     obsdict = obslog(infilelist)
     images = len(infilelist)
 
-  # make table of unique configurations
+  # make table of unique polarimetric configurations
     confdatlisti = []
     for i in range(images):
+        if obsdict['BS-STATE'][i] == 'Removed': continue
         confdatlist = []
         for item in confitemlist:
             confdatlist.append(obsdict[item][i])
@@ -460,6 +562,40 @@ def angle_average(ang_d):
     sep_d[sc_d[0].position_angle(sc_d).deg == 270.] *= -1.
     angmean = (sc_d[0].ra + sep_d.mean()).deg % 360.
     return angmean
+# ----------------------------------------------------------
+
+def rotate2d(yx_ds, rot, center=np.zeros(2)):
+    """rotate an array of 2d coordinates
+
+    Parameters:
+    yx_ds: 2d numarray of 2d coordinates
+        _d: 0,1 for y,x
+        _s: index of coordinates
+    rot: amount to rotate (degrees)
+    center: y,x coordinates of rotation center (default 0,0)
+
+    """
+
+    c = np.cos(np.radians(rot))
+    s = np.sin(np.radians(rot))
+    rotate = np.transpose([[c, s],[-1.*s, c]])
+    yx1_ds = yx_ds - center[:,None]
+    yxout_ds = (np.dot(yx1_ds.T,rotate)).T
+    yxout_ds +=  center[:,None]
+    return yxout_ds
+# ----------------------------------------------------------
+
+def fargmax(arr):
+    """returns simple floating argmax using quad fit to top 3 points
+
+    Parameters:
+    arr: 1d numarray
+
+    """
+    argmax = np.clip(np.argmax(arr),1,len(arr)-2)
+    fm,f0,fp = tuple(arr[argmax-1:argmax+2])
+    darg = -0.5*(fp - fm)/(fp + fm - 2.*f0)     
+    return (argmax + darg)
 # ----------------------------------------------------------
 
 def printstdlog(string,logfile):

@@ -1,8 +1,9 @@
 import os, sys, glob
-print "Run toolprep first";exit()   # replaced with poldir text by toolprep.py
+#poldir = '/d/freyr/Dropbox/software/SALT/polsaltcurrent/'
+poldir = '/usr/users/khn/src/salt/polsaltcurrent/'
 
 scrdir=poldir+'scripts/'
-cmd = 'python '+scrdir+sys.argv[1]+' '+(' ').join(sys.argv[2:])
+cmd = 'python2.7 '+scrdir+sys.argv[1]+' '+(' ').join(sys.argv[2:])
 
 # python script.py pyscript.py args..
 #   script.py runs any python module in script directory

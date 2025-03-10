@@ -90,7 +90,7 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
 
         newfluxdbtab = Table( \
             names=['no','OBJECT']+confitemList,dtype=[int,'S'+str(namelen),'S10','S6',float,float])
-        newfluxdbtab.add_row([len(fluxdbtab)+1,object]+list(configtab[obs]))       
+        newfluxdbtab.add_row([len(fluxdbtab)+1,object]+list(configtab[config]))       
         if Table(newfluxdbtab.columns[1:]) in Table(fluxdbtab.columns[1:]): continue
 
       # It's a new flux standard, process it
@@ -193,6 +193,7 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
 
     cunitfluxed = 'erg/s/cm^2/Ang'          # header keyword CUNIT3 if data is already fluxed     
     for obs in range(obss):
+        object,config = obstab[obs]    
         iobs = np.where(obs_i == obs)[0][0]
         hdul = pyfits.open(infilelist[iobs])
         if 'CUNIT3' in hdul['SCI'].header:
@@ -202,9 +203,9 @@ def specpolflux(infilelist, logfile='salt.log', debug=False):
         
         fluxdbentry_e = []
         for e in range(len(fluxdbconftab)):
-            if ((fluxdbconftab[e]['GRATING']==configtab[obs]['GRATING']) &  \
-                (fluxdbconftab[e]['CAMANG']==configtab[obs]['CAMANG'])  &  \
-                (abs(fluxdbconftab[e]['GR-ANGLE']-configtab[obs]['GR-ANGLE']) < 0.1)):
+            if ((fluxdbconftab[e]['GRATING']==configtab[config]['GRATING']) &  \
+                (fluxdbconftab[e]['CAMANG']==configtab[config]['CAMANG'])  &  \
+                (abs(fluxdbconftab[e]['GR-ANGLE']-configtab[config]['GR-ANGLE']) < 0.1)):
                 fluxdbentry_e.append(e)
         if len(fluxdbentry_e) == 0:
             printstdlog(('\n    No flux calibration available for  %s' % infilelist[iobs]), logfile)

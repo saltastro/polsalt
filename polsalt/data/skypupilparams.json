@@ -1,0 +1,15 @@
+{
+    "_comment": "for 20221105 twilight data.  created 20240908",
+    "_units": "ET10 pixels, millisecs",    
+    "primwidth":    95.0,
+    "obscdia":      44.0,
+    "dprimdMB":     0.7752,
+    "obscoffrc_d":  [-0.630,  1.809],
+    "dobscdtarg_s": [-1.250, -0.753],
+    "centrbindia":  54,
+    "shuttertime":  225.0,
+    "MPdr_D":       [-22.0,-34.0],
+    "MPdc_Dd":      [-20.0,-9.0,-9.0,12.0],            
+    "mbyxslope_d":  [-0.025227,0.025259],
+    "mbyxinter_d":  [0.000450, 0.000657] 
+}    

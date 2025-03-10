@@ -1,0 +1,54 @@
+from polutils import datedline, rssdtralign, configmap,readmaskxml,readmaskgcode,YXcalc
+from polutils import rssdtralign, rssmodelwave, fargmax
+from rssmaptools import sextract,catid,ccdcenter,gaincor,   \
+    YXcalc,impolguide,rotate2d,fence,legfit_cull,Tableinterp
+from specpolutils import rssdtralign, rssmodelwave
+from rssmaptools import sextract,catid,ccdcenter,gaincor,YXcalc,impolguide,rotate2d,Tableinterp
+from specpolutils import rssdtralign, rssmodelwave
+from rssmaptools import sextract,catid,ccdcenter,gaincor,YXcalc
+
+Need in:
+polmaptools: sextract,catid,readmaskxml,readmaskgcode,ccdcenter,gaincor,YXcalc,impolguide,rotate2d,Tableinterp
+polutils: datedline,configmap,rssdtralign,rssmodelwave,fargmax,   fence,legfit_cull
+
+Currently:
+polmaptools:                                                                                                        Need
+# configmap(infilelist,confitemlist,debug='False')                                                                  No
+# sextract(fits,sigma=5.,deblend=.005,minpix=10,fwhmlo=0.6,fwhmhi=1.5,cull=False,logfile='salt.log',debug=False)    Yes
+# readmaskxml(xmlfile)                                                                                              Yes
+# readmaskgcode(gcodefile)                                                                                          Yes
+# catid(yxcat_dt, yxcand_ds, offsettol=10., errtol=4.,debug=False,logfile='salt.log',name='')                       Yes
+# ccdcenter(image_rc)                                                                                               Yes
+# gaincor(hdu)                                                                                                      Yes
+# YXcalc(ra_t,dec_t,RAd,DECd,PAd,fps)                                                                               Yes
+# impolguide(YX_dt,yx_dpt,yxOEoff_d,wavl,coltem,camtem,debug=False,name='')                                         Yes
+# Tableinterp(Tab,interpkey,interp_x)                                                                               Yes
+# rotate2d(yx_ds, rot, center=np.zeros(2))                                                                          Yes
+# boxsmooth1d(ar_x,ok_x,xbox,blklim)
+# blksmooth2d(ar_rc,ok_rc,rblk,cblk,blklim,mode="mean",debug=False)                                                 Yes
+# fence(arr)                                                                                                        Move
+# polyfit_cull(x_x,y_x,ok_x,deg,fence='outer')                                                                      Move (misnamed)
+# fracmax(arr,frac=0.5)
+# printstdlog(string,logfile)                                                                                       No
+
+polutils:
+# datedfile(filename,date)
+# datedline(filename,date)                                                                                          Yes
+# greff(grating,grang,artic,dateobs,wav)                                                                            Yes
+# rssdtralign(datobs,trkrho)                                                                                        Yes
+# rssmodelwave(grating,grang,artic,trkrho,cbin,cols,datobs)                                                         Yes
+# hwcal(calfile,YX_ds,MByx_ds,wav_w)
+# configmap(infileList,confitemList,debug='False')                                                                  Yes
+# readmaskxml(xmlfile)                                                                                              No
+# readmaskgcode(gcodefile)                                                                                          No
+# YXcalc(ra_t,dec_t,RAd,DECd,PAd,fps)                                                                               No
+# image_number(image_name)
+# list_configurations(infileList, logfile)
+# configmapset(obsTab, configList=('GRATING','GR-ANGLE', 'CAMANG'))
+# list_configurations_old(infileList, logfile)
+# blksmooth1d(ar_x,blk,ok_x)
+# angle_average(ang_d)
+# rotate2d(yx_ds, rot, center=np.zeros(2))                                                                          No
+# specpolrotate(stokes_Sw,var_Sw,covar_Sw,par_w,normalized=False)
+# viewstokes(stokes_Sw,err2_Sw,ok_w=[True],tcenter=0.)
+# fargmax(arr)                                                                                                      Yes

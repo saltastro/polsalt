@@ -27,7 +27,7 @@ import reddir
 datadir = os.path.dirname(inspect.getfile(reddir)) + "/data/"
 np.set_printoptions(threshold=np.nan)
 
-def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
+def specpolrawstokes(infilelist, **kwargs):
     """Produces an unnormalized stokes measurement in intensity from
        a pair of WP filter positions
 
@@ -56,13 +56,19 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
     _j index within files of an observation
 
     """
+    logfile= kwargs.pop('logfile','specpolrawstokes.log')
+    with_stdout = kwargs.pop('with_stdout',True)
+    debug = kwargs.pop('debug',False)
+    if isinstance(debug, str): debug=(debug=="True")
+             
     # set up some files that will be needed
     obsdate = os.path.basename(infilelist[0]).split('.')[0][-12:-4]
 
     patternfile = open(datadir + 'wppaterns.txt', 'r')
-    with logging(logfile, debug) as log:
+    
+    with logging(logfile, debug, with_stdout=with_stdout) as log:
 
-        log.message('specpolrawstokes version: 20191111', with_header=False) 
+        if with_stdout: log.message('specpolrawstokes version: 20230124', with_header=False) 
      
         # create the observation log
         obs_dict = obslog(list(infilelist))         # ensure infilelist not altered by obs_dict
@@ -73,7 +79,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
             [int(os.path.basename(s).split('.')[0][-4:]) for s in infilelist])
         wpstate_i = [['unknown', 'out', 'qbl', 'hw', 'hqw']
                      [int(s[1])] for s in np.array(obs_dict['WP-STATE'])]
-        wppat_i = np.array(obs_dict['WPPATERN'])
+        wppat_i = np.char.upper(np.array(obs_dict['WPPATERN']))
         object_i = np.array(obs_dict['OBJECT'])
         bvisitid_i = np.array(obs_dict['BVISITID'])
         config_i = np.zeros(images, dtype='int')
@@ -85,10 +91,10 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
         for i in range(images):
             hdul = pyfits.open(infilelist[i])
             if (wpstate_i[i] == 'unknown'):
-                log.message( 'Warning: Image %s WP-STATE UNKNOWN, assume it is 3 (HW)' % img_i[i], with_header=False)
+                if with_stdout: log.message( 'Warning: Image %s WP-STATE UNKNOWN, assume it is 3 (HW)' % img_i[i], with_header=False)
                 wpstate_i[i] = 'hw'
             elif (wpstate_i[i] == 'out'):
-                log.message( 'Image %i not in a WP pattern, will skip' % img_i[i], with_header=False)
+                if with_stdout: log.message( 'Image %i not in a WP pattern, will skip' % img_i[i], with_header=False)
                 continue
             if object_i[i].count('NONE'):
                 object_i[i] = obs_dict['LAMPID'][i]
@@ -131,7 +137,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
             print "confdat_cd: ",confdat_cd
             print "obsdat_od:  ",obsdat_od
 
-        log.message(
+        if with_stdout: log.message(
             'Raw Stokes File     OBS CCDSUM GRATING  GR-ANGLE  CAMANG    WPPATERN',
             with_header=False)
 
@@ -144,7 +150,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
             i0 = idx_j[0]
             name_n = []
             if wppat_i[i0].count('NONE'):
-                log.message((('\n     %s  WP Pattern: NONE. Calibration data, skipped') % infilelist[i0]),  \
+                if with_stdout: log.message((('\n     %s  WP Pattern: NONE. Calibration data, skipped') % infilelist[i0]),  \
                     with_header=False)
                 continue
             if wppat_i[i0].count('UNKNOWN'):
@@ -163,7 +169,7 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
                 if (p.split()[0] == wppat_i[i0]) & (p.split()[2] == 'hwp'):
                     wpat_p = np.array(p.split()[3:]).astype(int)
                 if (p.split()[0] == wppat_i[i0]) & (p.split()[2] == 'qwp'):
-                    wpat_dp = np.vstack(wpat_p, np.array(p.split()[3:]))
+                    wpat_dp = np.vstack((wpat_p, np.array(p.split()[3:]).astype(int) % 32))      # khn 20211013 fix
             stokes = 0
             j = -1
 
@@ -200,12 +206,23 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
                                 continue
 
                 if (wpstate_i[i] == 'hqw'):
-                    if (np.where(wpat_dp[0::2] == (hsta_i[i], qsta_i[i]))[0].size > 0):
-                        idxp = np.where( wpat_dp == ( hsta_i[i], qsta_i[i]))[0][0]
-                        if (hsta_i[i + 1], qsta_i[i + 1]) != wpat_dp[None, idxp + 1]:
-                            continue
-                    else:
-                        continue
+                    if (len(firstpairList)==0):                               
+                        if (np.where(wpat_dp[:,0::2] == (hsta_i[i], qsta_i[i]))[0].size > 0):
+                            idxp = np.where( wpat_dp == ( hsta_i[i], qsta_i[i]))[0][0]
+                            firstpairList = [infilelist[i],]
+                        continue                            
+                    if (len(secondpairList)==0):
+                        if ((hsta_i[i], qsta_i[i]) == wpat_dp[:,idxp]).all():
+                            firstpairList.append(infilelist[i])
+                            continue                                                        
+                        elif ((hsta_i[i], qsta_i[i]) == wpat_dp[:,idxp + 1]).all():
+                            secondpairList = [infilelist[i],]     
+                    elif ((hsta_i[i], qsta_i[i]) == wpat_dp[:,idxp + 1]).all():                            
+                        secondpairList.append(infilelist[i])
+                    if (len(secondpairList) > 0):
+                        if (j < (len(idx_j)-1)):
+                            if ((hsta_i[i+1], qsta_i[i+1]) == wpat_dp[:,idxp + 1]).all():
+                                continue
 
                 name = object_i[i]
                 isname_o = (np.transpose(obsdat_od)[0]==name)
@@ -213,14 +230,19 @@ def specpolrawstokes(infilelist, logfile='salt.log', debug=False):
                     name += '_'+str(isname_o[:obs+1].sum())
                 name += '_c' + str(config_i[i]) + '_h' + str(wpat_p[idxp]) + str(wpat_p[idxp+1])
                 if (wpstate_i[i] == 'hqw'):
-                    name += 'q' + ['m', 'p'][qsta_i[i] == 4] + ['m', 'p'][qsta_i[i + 1] == 4]
+                    name += 'q' + ['m', 'p'][wpat_dp[1,idxp] == 4] + ['m', 'p'][wpat_dp[1,idxp+1] == 4]
                 count = " ".join(name_n).count(name)
                 name += ('_%02i' % (count + 1))                 # count + 1 = cycle count
 
+                if debug:
+                    print firstpairList, secondpairList
+
                 create_raw_stokes_file(firstpairList, secondpairList, wav0, wavs,
                     output_file=name + '.fits', wppat=wppat_i[i], debug=debug)
+
+                rbin, cbin, grating, grang, artic, dum,dum,dum = confdat_cd[config_i[i]]
                  
-                log.message('%20s  %1i  %1i %1i %8s %8.2f %8.2f %12s' %
+                if with_stdout: log.message('%20s  %1i  %1i %1i %8s %8.2f %8.2f %12s' %
                             (name, obs, rbin, cbin, grating, grang, artic, wppat_i[i]), with_header=False)
                 name_n.append(name)
                 stokes += 1
@@ -266,6 +288,8 @@ def create_raw_stokes_file(firstpairList, secondpairList, wav0, wavs, output_fil
     covar_fOw = np.zeros_like(sci_fOw)
     bpm_fOw = np.zeros_like(sci_fOw)
     exptime_f = np.zeros(2)
+    imgtime_f = np.zeros(2)    
+    obsDT_f = np.zeros(2,dtype=object)    
     telpa_f = np.zeros(2)
     dwav = pyfits.getheader(firstpairList[0], 'SCI', 1)['CDELT1']
     grating = pyfits.getheader(firstpairList[0], 'SCI')['GRATING'].strip()
@@ -275,25 +299,32 @@ def create_raw_stokes_file(firstpairList, secondpairList, wav0, wavs, output_fil
     for f, imgList in enumerate([firstpairList, secondpairList]):
         hdulist = pyfits.open(imgList[0])
         exptime_f[f] = hdulist[0].header['EXPTIME']
+        imgtime_f[f] = np.copy(exptime_f[f])        
+        obsDT_f[f] = np.datetime64(hdulist[0].header['DATE-OBS']+'T'+hdulist[0].header['UTC-OBS'])        
         telpa_f[f] = hdulist[0].header['TELPA']
         wav0f = pyfits.getheader(imgList[0], 'SCI', 1)['CRVAL1']
         c0 = int((wav0-wav0f)/dwav)
+        obsendDT = obsDT_f[f] + np.timedelta64(int(round(exptime_f[f])),'s')            
         sci_fOw[f] = hdulist['SCI'].data[:,:,c0:c0+wavs].reshape((2, -1))
         var_fOw[f] = hdulist['VAR'].data[:,:,c0:c0+wavs].reshape((2, -1))
         covar_fOw[f] = hdulist['COV'].data[:,:,c0:c0+wavs].reshape((2, -1))
         bpm_fOw[f] = hdulist['BPM'].data[:,:,c0:c0+wavs].reshape((2, -1))
         if len(imgList) > 1:
-            telpa_i = np.zeros(len(imgList))
+            telpa_i = telpa_f[f]*np.ones(len(imgList))      # fix to detector iterations problem
             for i in range(1,len(imgList)):
                 hdulist = pyfits.open(imgList[i])
                 exptime_f[f] += hdulist[0].header['EXPTIME']
+                obsstartDT = np.datetime64(hdulist[0].header['DATE-OBS']+'T'+hdulist[0].header['UTC-OBS'])                 
                 telpa_i[i] = hdulist[0].header['TELPA']
                 sci_fOw[f] += hdulist['SCI'].data[:,:,c0:c0+wavs].reshape((2, -1))
                 var_fOw[f] += hdulist['VAR'].data[:,:,c0:c0+wavs].reshape((2, -1))
                 covar_fOw[f] += hdulist['COV'].data[:,:,c0:c0+wavs].reshape((2, -1))
                 bpm_fOw[f] = np.maximum(bpm_fOw[f],hdulist['BPM'].data[:,:,c0:c0+wavs].reshape((2, -1))) 
             telpa_f[f] =  angle_average(telpa_i)              
-
+            obsendDT = obsstartDT + np.timedelta64(int(round(hdulist[0].header['EXPTIME'])),'s')
+                            
+        obsDT_f[f] += (obsendDT - obsDT_f[f])/2.
+        
   # Mark as bad bins with negative intensities
     bpm_fOw[sci_fOw < 0] = 1
 
@@ -346,7 +377,13 @@ def create_raw_stokes_file(firstpairList, secondpairList, wav0, wavs, output_fil
     if wppat:
         hduout[0].header['WPPATERN'] = wppat
     hduout[0].header['EXPTIME'] =  exptime_f.sum()
+    hduout[0].header['IMGTIME'] =  imgtime_f.mean()       
+    obsDT = obsDT_f[0] + (obsDT_f[1] - obsDT_f[0])/2. 
+    hduout[0].header['DATE-OBS'] =  (str(obsDT).split('T')[0], 'Date of center of observation')
+    hduout[0].header['UTC-OBS'] =  (str(obsDT).split('T')[1], 'UTC of center of observation')
+    del hduout[0].header['TIME-OBS']                                # obsolete                
     hduout[0].header['TELPA'] =  round(angle_average(telpa_f),4)
+    hduout[0].header['PAIRF21'] = ('%18.6f' % f21)
     header = hdulist['SCI'].header.copy()
     header['VAREXT'] =  2
     header['COVEXT'] =  3

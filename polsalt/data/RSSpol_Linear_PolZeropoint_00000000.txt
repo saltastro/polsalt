@@ -1,4 +1,0 @@
-# RSS linear polarization zeropoint
-# dummy for debug
-#  Ang   %iq0     %iu0
-  6200    0.0     0.0

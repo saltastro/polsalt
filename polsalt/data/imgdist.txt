@@ -1,0 +1,17 @@
+# imgdist.txt
+# ab0: coord-transform_120514.pdf, minus c,r = 3163,2052, the sextractor center of Omega Cen 2011 data
+# a,b,r in unbinned pixels 
+# fscl from ZEMAX ic_67 in micr/arcsec poly fit vs (w-5000)/1000, at 7.5 C, with slope/C
+#       col     row  (reversed for python) 
+ab0    111.3   18.0 
+abd     72.8   44.1
+rd    1888.8    0 
+A,B   0.0143 0.0078 
+Fscl5  0.000439	0
+Fscl4 -0.003796	0
+Fscl3  0.010803	-0.000014
+Fscl2 -0.002475	 0.000112
+Fscl1  0.070803	-0.000353
+Fsclb  118.0417	-0.001662
+ 
+

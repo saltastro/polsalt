@@ -1,0 +1,26 @@
+reducepoldata structure
+Old:
+
+poltargetmap
+    from impolmap import imarcpolmap, imfilterpolmap, imspecpolmap          (951 lines)
+    linepolmap, specpolmap
+
+polextract
+    from immospolextract import findpair, imfilpolextract, immospolextract  (1276 lines)
+    from slitlesspolextract import slitlesspolextract                       (1163 lines)
+
+new:
+poltargetmap
+    from imslitlessmap import imfilmap, imspecslitlessmap (was imspecpolmap)
+    from immospolmap import imarcpolmap, imspecmospolmap
+    from linepol import linepolmap
+    from specpol import specpolmap
+
+polextract
+    from imslitlessextract import imfilextract, slitlessextract
+    from immospolextract import findpair, immospolextract
+    from linepol import linepolextract
+    from specpol import specpolextract
+
+polrawstokes    standalone, all modes
+polfinalstokes  standalone, all modes

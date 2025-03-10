@@ -1,0 +1,73 @@
+---------------------
+
+Optimizer search:
+Start
+ i  j  k dPA(deg)   dX(")  dY(") P1s targs refs %P1coll  P1shft cr cs ss     ra          dec
+ 0  0  0     0.00     0.0     0.0  28 110   4    17.14     4.13
+
+Grid Search
+preshift colls:  [[  7  11  26  36]
+ [253 288 185  80]]
+postshift colls:  [[  7  11  26  36]
+ [ 45  26 146  80]]
+coll repeat?:  [[ True  True  True  True]
+ [False  True False  True]] [False  True False  True]
+coll in preshift:  [[ 0  1  2  3]
+ [-1  2 -1  3]] [ True  True  True False]
+group list:  [1] [False  True False False]
+
+culling slit from collision group:
+  group:  [ 11  26  26 146]
+  lenposns  [-50.47294731 -65.42146132 -65.42146132 -50.17213407]
+  cull slitidx:  146
+
+preshift colls:  [[  7  11  26  36]
+ [ 45  26 185  80]]
+postshift colls:  [[  7  11  26]
+ [253 288 185]]
+coll repeat?:  [[ True  True  True]
+ [False False  True]] [False False  True]
+coll in preshift:  [[ 0  1  2]
+ [-1 -1  2]] [ True  True False]
+group list:  [] [False False False]
+
+ 0  0  0     0.00     0.0     0.0  28 109   4    13.53     4.28  0 170  6  325.09428  -23.17847  Best
+
+--> xml_4
+--------------------
+load xml_4
+
+Optimizer search:
+Start
+ i  j  k dPA(deg)   dX(")  dY(") P1s targs refs %P1coll  P1shft cr cs ss     ra          dec
+ 0  0  0     0.00     0.0     0.0  28 109   4    13.47     4.28
+
+Grid Search
+preshift colls:  [[  7  11  26]
+ [253 288 185]]
+postshift colls:  [[  7  11  26]
+ [253  26 146]]
+collidees:  [  7  11  26 146 253]
+count:  [2, 2, 3, 1, 2]
+collidees in group:  [26]
+
+culling slit from collision group:
+  group:  [ 11  26 146 185]
+  lenposns  [-50.47294731 -65.42146132 -50.17213407 -74.9137432 ]
+  cull slitidx:  146
+
+preshift colls:  [[  7  11  26]
+ [253  26 185]]
+postshift colls:  [[  7  11  26]
+ [253  80 185]]
+collidees:  [  7  11  26  80 185 253]
+count:  [2, 2, 3, 1, 2, 2]
+collidees in group:  [26]
+
+culling slit from collision group:
+  group:  [ 11  26 185]
+  lenposns  [-50.47294731 -65.42146132 -74.9137432 ]
+  cull slitidx:  185
+
+ 0  0  0     0.00     0.0     0.0  28 108   4     0.80     4.31  0 171  5  325.09428  -23.17847  Best
+--> rsmt, png, xml_5, csv_6, region_4

@@ -1,3 +1,4 @@
+#! /usr/bin/env python2.7
 
 """
 specpolfinalstokes
@@ -168,7 +169,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
             telpa_j = np.zeros(rawstokes)
             comblist = []
 
-            for j in range(rawstokes):
+            for j in range(rawstokes):            
                 i,object,config,wvplt,cycle = rawlist[j]
                 lampid = pyfits.getheader(infilelist[i],0)['LAMPID'].strip().upper()
                 telpa_j[j] = float(pyfits.getheader(infilelist[i],0)['TELPA'])
@@ -192,7 +193,8 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                     rawtel0_sw =    \
                         specpolrotate(tel0_sw,0,0,dpatelraw_w,normalized=True)[0]
                     rawtel0_sw[:,okcal_w] *= heff_w[okcal_w]
-                    stokes_jSw[j,1,okcal_w] -= stokes_jSw[j,0,okcal_w]*rawtel0_sw[0,okcal_w]
+                    stokes_jSw[j,1,okcal_w] -= stokes_jSw[j,0,okcal_w]*rawtel0_sw[0,okcal_w]                
+                    
                 if cycles==1:
                     comblist.append((j,object,config,wvplt,1,wppat,pacaltype))
                 else:
@@ -391,12 +393,17 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
               # name result to document hw cycles included
                 kplist = list(k_p)
                 if cycles_p.max()==cycles_p.min(): kplist = [klist[0],] 
-
+                
                 for p in range(len(kplist)):
                     obsname += "_"
-                    j0 = comblist[k_p[p]][0] - cycles_p[p] + 1
-                    for j in range(j0,j0+cycles_p[p]): obsname+=rawlist[j][4][-1]
+                    j0 = comblist[k_p[p]][0] - cycles_p[p] + 1                    
+                    if (max([int(rawlist[j][4]) for j in range(j0,j0+cycles_p[p])])>9): 
+                        obsname += 'd'                                          # double-digit cycles
+                        for j in range(j0,j0+cycles_p[p]): obsname+=rawlist[j][4]
+                    else:
+                        for j in range(j0,j0+cycles_p[p]): obsname+=rawlist[j][4][-1]                    
                 log.message("\n  Observation: %s  Date: %s" % (obsname,dateobs), with_header=False)
+                
                 finstokes = patternstokes[wppat]   
 
                 if pairs != patpairs:
@@ -596,7 +603,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                         eqpar_w = hpar_w + dpa + (telpa % 180) 
                         stokes_Fw[1:,ok_w] /= heff_w[ok_w]
                         var_Fw[1:,ok_w] /= heff_w[ok_w]**2
-                        covar_Fw[1:,ok_w] /= heff_w[ok_w]**2
+                        covar_Fw[1:,ok_w] /= heff_w[ok_w]**2                        
                         stokes_Fw,var_Fw,covar_Fw = specpolrotate(stokes_Fw,var_Fw,covar_Fw,eqpar_w)
 
                 # save final stokes fits file for this observation.  Strain out nans.
@@ -607,7 +614,7 @@ def specpolfinalstokes(infilelist,logfile='salt.log',debug=False,  \
                     hduout['VAR'].data = np.nan_to_num(var_Fw.reshape((4,1,-1)))
                     hduout['VAR'].header['CTYPE3'] = 'I,Q,U,QU'
                     hduout['COV'].data = np.nan_to_num(covar_Fw.reshape((3,1,-1)))
-                    hduout['COV'].header['CTYPE3'] = 'I,Q,U,QU'
+                    hduout['COV'].header['CTYPE3'] = 'I,Q,U'
 
                     hduout['BPM'].data = bpm_Fw.astype('uint8').reshape((3,1,-1))
                     hduout['BPM'].header['CTYPE3'] = 'I,Q,U'

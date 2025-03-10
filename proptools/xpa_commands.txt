@@ -1,0 +1,56 @@
+>>> import os
+>>> import pyds9 as ds9
+
+>>> os.system("ds9 &")
+0
+-khn-oderbolz-62-> ps x | grep ds9
+  519 pts/0    Sl     0:01 ds9
+  821 pts/0    S+     0:00 grep ds9
+-khn-oderbolz-66-> ps x | grep ds9 | wc -l
+2
+
+>>> dproc = ds9.DS9()
+>>> dproc.access()
+'DS9:ds9 905cb27f:45638'
+or
+>>> ds9.ds9_targets(target='DS9:*')
+['DS9:ds9 905cb27f:45638']
+
+from https://github.com/ericmandel/xpa/blob/master/doc/env.html
+
+
+<DT><B>XPA_LONG_TIMEOUT</B>
+<DD> XPA is designed to allow data to be sent from one process to
+another over a long period of time (i.e., a program that generates
+image data sends that data to an image display, but slowly) but it
+also seeks to prevent hangs. This is done by supporting 2 timeout
+periods: a <EM>short</EM> timeout for protocol communication
+and a <EM>long</EM> for data communication.
+<P>
+The <EM>XPA_LONG_TIMEOUT</EM> variable controls the <EM>long</EM>
+timeout and is used to prevent hangs in cases where communication
+between the client and server that is <EM>not</EM> controlled by the
+XPA interface itself. Transfer of data between client and server, or a
+client's wait for a status message after completion of the server
+callback, are two examples of this sort of communication. By default,
+the <EM>long</EM> timeout is set to 180 seconds.
+Setting the value to -1 will disable <EM>long</EM> timeouts and allow
+an infinite amount of time.
+
+<DT><B>XPA_SHORT_TIMEOUT</B>
+<DD> XPA is designed to allow data to be sent from one process to
+another over a long period of time (i.e., a program that generates
+image data sends that data to an image display, but slowly) but it
+also seeks to prevent hangs. This is done by supporting 2 timeout
+periods: a <EM>short</EM> timeout for protocol communication
+and a <EM>long</EM> for data communication.
+<P>
+The <EM>XPA_SHORT_TIMEOUT</EM> variable
+controls the <EM>short</EM> timeout and is used to prevent hangs
+in cases where the XPA protocol requires internal communication between
+the client and server that is controlled by the XPA interface
+itself. Authentication is an example of this sort of communication,
+as is the establishment of a data channel between the two processes.
+The default value for the <EM>short</EM> is 30 seconds (which is
+a pretty long time, actually). Setting the value to -1 will disable
+<EM>short</EM> timeouts and allow an infinite amount of time.

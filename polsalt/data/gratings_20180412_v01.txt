@@ -1,0 +1,10 @@
+# from ArcModel.xlsx 7/10/2012,
+# grating-alignment.xlsx/180412 fit to zemax tilt model
+#         l/mm    deg   deg     deg
+# Grating disp   tilt0 sinart  cosart
+PG0300  300.00  -0.156  0.287   0.169
+PG0900  903.89  -0.156  0.287   0.169
+PG1300  1299.76 -0.156  0.287   0.169
+PG1800  1801.89 -0.156  0.287   0.169
+PG2300  2302.60 -0.156  0.287   0.169
+PG3000  3000.55 -0.156  0.287   0.169

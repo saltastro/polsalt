@@ -1,0 +1,31 @@
+# Argon Spectral Lines
+# linelist for polarimetry with 300l/mm grating
+# 2nd order for filters 3850 and less
+# Widely-spaced strong lines from.salt and .dat
+# K. Nordsieck  7 Sep, 2017
+#Wave   Int-Wt  Comment
+3948.978    40
+4044.418    50
+4333.561    129
+4702.316    35
+5495.874    43
+5606.733    53
+6416.307    164
+6677.282    434
+6752.834    331
+6871.289    316
+6965.431    5618
+7067.218    2598
+7147.042    4072
+7272.936    4000
+7383.981    1000
+7503.869    300
+7635.106    600
+7948.176    1000
+8014.786    1500
+8115.311    8000
+#8317.182    10  4158 2nd order
+#8401.3476   10  4200 2nd order
+8521.442    50
+#8667.122    10  4333 2nd order
+9122.967    100
