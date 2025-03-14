@@ -94,7 +94,7 @@ def polfinalstokes(infileList, **kwargs):
         patternpairs[p.split()[0]]=(len(p.split())-3)/2
         patternstokes[p.split()[0]]=int(p.split()[1])
 
-    rsslog.message('polfinalstokes version: 20250305', logfile, with_stdout=with_stdout)
+    rsslog.message('polfinalstokes version: 20250312', logfile, with_stdout=with_stdout)
 
   # optics data
     obsDict = create_obslog(infileList,keywordfile)
@@ -247,7 +247,8 @@ def polfinalstokes(infileList, **kwargs):
                 Heffcalfile = datedfile(datadir+"RSSpol_Heff_"+label+"_yyyymmdd_vnn.???",dateobs)
                 usenewheffcal = ((len(Heffcalfile)>0) & (not useoldheffcal))
                 if (not usenewheffcal):                        
-                    Heffcalfile = datedfile(datadir+"RSSpol_HW_Calibration_yyyymmdd_vnn.txt",dateobs)                          
+                    Heffcalfile = datedfile(datadir+"RSSpol_HW_Calibration_yyyymmdd_vnn.txt",dateobs)
+                    useoldheffcal = True                         
                     rsslog.message("\nUsing old heffcalfile: %s, target %i" % (Heffcalfile,i_t[t00]),    \
                         logfile, with_stdout=with_stdout)
             caldoc2 = ''                                            
@@ -291,7 +292,7 @@ def polfinalstokes(infileList, **kwargs):
             telpa_j[j] = float(obsDict['TELPA'][i])
             rho_j[j] = float(obsDict['TRKRHO'][i])
             imgtime_j[j] = hdr0.get('IMGTIME',default=0.)   # this is for shutter illumination correction
-            if ((imgtime_j[j] == 0.) & (not useoldheffcal)):
+            if ((imgtime_j[j] == 0.) & usenewheffcal):
                 imgtime_j[j] = float(obsDict['EXPTIME'][i])/2.
                 rsslog.message("\nWARNING: %s IMGTIME not found, using exptime/2: %6.2f" %  \
                     (infileList[i],imgtime_j[j]), logfile, with_stdout=with_stdout)
@@ -1012,7 +1013,7 @@ def polfinalstokes(infileList, **kwargs):
                     ok_m &= okcal_om[obs]                                                                                    
                     stokes_Fm,var_Fm,covar_Fm = specpolrotate(stokes_Fm,var_Fm,covar_Fm,hpacor_m)
 
-                    if (not useoldheffcal):
+                    if usenewheffcal:
                         if pacorfile:
                             slitdwav = (C0*maskasec*(FCam6000/FColl6000)/15.)*(wavs*dwav/(3*2048))
                             stokes_Fm,var_Fm,covar_Fm = \

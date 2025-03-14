@@ -70,7 +70,7 @@ def scirecal(infiletxt, **kwargs):
     wavmax = 0.
 
     for fidx in range(obss):
-        scidir = RSSdir+str(obsdate_f[fidx])+'/sci'
+        scidir = RSSdir+str(obsdate_f[fidx])
         os.chdir(scidir)
       # get information from sci fits
         if (fidx==0):
@@ -114,8 +114,11 @@ def scirecal(infiletxt, **kwargs):
             if ((obsDict['OBJECT'][f].replace(' ','') in target )     \
                 and (obsDict['GRTILT'][f]==grtilt )                 \
                 and (bvisitid_f[f]==bvisitid )) ]                
-                                             
-        newcaldir = RSSdir+str(obsdate_f[fidx])+'/newcal'
+
+        if (len(usrHeffcalfile)>0):                                             
+            newcaldir = RSSdir+str(obsdate_f[fidx])+'/newcal'
+        else:
+            newcaldir = RSSdir+str(obsdate_f[fidx])+'/sci_gamma'
         if (not os.path.exists(newcaldir)): os.makedirs(newcaldir) 
         os.chdir(newcaldir)        
         ecfileList = [ '../sci/'+file for file in ecfileList ] 
@@ -143,11 +146,6 @@ def scirecal(infiletxt, **kwargs):
             calaccuracy_assess(newcalfile,minwav=minwav)[:4]  
         wavmin = min(wavmin,wavmean_h.min())
         wavmax = max(wavmax,wavmean_h.max())
-
-        if (startdir != newcaldir):
-            objvisit = targvisit.replace(target,objname)                
-            outfile = obsdate_f[fidx]+'_'+objvisit+'_'+addcycle+nametag+'_stokes.fits'
-            shutil.copyfile(newcaldir+'/'+newcalfile,startdir+'/'+outfile)
            
         rsslog.message((" %8s %"+str(inlen)+"s %"+str(outlen)+"s %7.3f %7.3f   %7.3f %7.3f") %   \
             (obsdate_f[fidx], stokesfileList[fidx], newcalfile,        \
@@ -254,7 +252,7 @@ if __name__=='__main__':
 # scirecal.py Hiltner652_files.txt usrHeffcalfile=RSSpol_Heff_Moon0_7_c0,cy1,cx1.zip nametag=calxy7 dorippleplot=True
 # scirecal.py Hiltner652_files.txt usrHeffcalfile=RSSpol_Heff_Moon0_8_c0,cy1,cx1_shtrcor.zip nametag=calxy8 dorippleplot=True minwav=4000.
 # scirecal.py Hiltner652_files.txt usrHeffcalfile=RSSpol_Heff_Moon0_9_c0,cy1,cx1_shtrcor_qucor.zip nametag=calxy9 dorippleplot=True minwav=4000.
-# scirecal.py Hiltner652_files.txt usrHeffcalfile=RSSpol_Heff_Moon0_10_c0,cy1,cx1_shtrcor_qucor_pacor.txt nametag=calxy10 dorippleplot=True minwav=4000.
+# scirecal.py Hiltner652_files.txt nametag=calxy10 dorippleplot=True minwav=4000.
 
 # cd ~/salt/polarimetry/Standards/NGC2024-1
 # scirecal.py NGC2024-1_files.txt usrHeffcalfile=RSSpol_Heff_Moon0_8_c0,cy1,cx1_shtrcor.zip nametag=calxy8 dorippleplot=True minwav=4000.
@@ -263,6 +261,7 @@ if __name__=='__main__':
 
 # cd ~/salt/polarimetry/Standards/Vela1-95
 # scirecal.py Vela1-95_files.txt usrHeffcalfile=RSSpol_Heff_Moon0_9_c0,cy1,cx1_shtrcor_qucor.zip nametag=calxy9 dorippleplot=True minwav=4000.
+# scirecal.py Vela1-95_files.txt nametag=calxy10 dorippleplot=True minwav=4000.
 
 # cd ~/salt/polarimetry/Standards/Star+Pol
 # scirecal.py 20110613_files.txt usrHeffcalfile=RSSpol_Heff_Moon0_9_c0,cy1,cx1_shtrcor_qucor.zip nametag=calxy9 dorippleplot=True
