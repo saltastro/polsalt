@@ -94,7 +94,7 @@ def polfinalstokes(infileList, **kwargs):
         patternpairs[p.split()[0]]=(len(p.split())-3)/2
         patternstokes[p.split()[0]]=int(p.split()[1])
 
-    rsslog.message('polfinalstokes version: 20250312', logfile, with_stdout=with_stdout)
+    rsslog.message('polfinalstokes version: 20250315', logfile, with_stdout=with_stdout)
 
   # optics data
     obsDict = create_obslog(infileList,keywordfile)
@@ -689,7 +689,7 @@ def polfinalstokes(infileList, **kwargs):
                         
             rho = rho_j[jList].mean() - np.diff(rho_j[jList]).mean()/2.
             obsDT = obsDT_j[jList].min() + (obsDT_j[jList].max() - obsDT_j[jList].min())/2.                                              
-            obsname = object+"_"+config
+            obsname = object                                                    # do not put conf in saved name
             wpList = [combListkd[k][3][1:] for k in kList]
             patwpList = sorted((patpairs*"%1s%1s " % tuple(patterndict[wppat].flatten())).split())
             pList = [patwpList.index(wpList[P]) for P in range(pairs)]
